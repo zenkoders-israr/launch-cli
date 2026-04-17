@@ -1,0 +1,23 @@
+import { NestFactory } from '@nestjs/core';
+import { ConfigService } from '@nestjs/config';
+import { AppModule } from './app.module';
+import { appBootstrap } from './bootstrap/app.bootstrap';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  await appBootstrap(app);
+
+  const config = app.get(ConfigService);
+  const port = config.get<number>('app.port') ?? 3000;
+
+  await app.listen(port);
+
+  const base = `http://localhost:${port}`;
+  console.log(`Server:  ${base}/api/v1`);
+  console.log(`Swagger: ${base}/api/docs`);
+{{#eq docs "swagger-scalar"}}
+  console.log(`Scalar:  ${base}/api/reference`);
+{{/eq}}
+}
+
+bootstrap();

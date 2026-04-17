@@ -1,0 +1,160 @@
+{
+  "name": "{{projectName}}",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "nest build",
+    "start": "nest start",
+    "start:dev": "nest start --watch",
+    "start:debug": "nest start --debug --watch",
+    "start:prod": "node dist/main",{{#eq queue "bullmq"}}
+    "start:worker": "node dist/worker",{{/eq}}
+    "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:cov": "jest --coverage",{{#eq testing "unit-e2e"}}
+    "test:e2e": "jest --config ./test/jest-e2e.json",{{/eq}}{{#eq orm "typeorm"}}
+    "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/database/typeorm.config.ts",
+    "migration:run": "typeorm-ts-node-commonjs migration:run -d src/database/typeorm.config.ts",
+    "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/database/typeorm.config.ts",
+    "seed": "ts-node -r tsconfig-paths/register src/database/seeders/seed.ts",{{/eq}}{{#eq orm "prisma"}}
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:migrate:prod": "prisma migrate deploy",
+    "prisma:studio": "prisma studio",
+    "seed": "ts-node -r tsconfig-paths/register prisma/seed.ts",{{/eq}}{{#eq orm "drizzle"}}
+    "drizzle:generate": "drizzle-kit generate",
+    "drizzle:migrate": "drizzle-kit migrate",
+    "drizzle:studio": "drizzle-kit studio",
+    "seed": "ts-node -r tsconfig-paths/register src/database/seeders/seed.ts",{{/eq}}
+    "prepare": "husky install"
+  },
+  "dependencies": {
+    "@nestjs/common": "^10.3.0",
+    "@nestjs/core": "^10.3.0",
+    "@nestjs/platform-express": "^10.3.0",
+    "@nestjs/config": "^3.2.0",
+    "@nestjs/terminus": "^10.2.3",
+    "@nestjs/schedule": "^4.0.1",
+    "@nestjs/swagger": "^7.3.0",
+    "@nestjs/axios": "^3.0.2",
+    "axios": "^1.6.8",
+    "class-validator": "^0.14.1",
+    "class-transformer": "^0.5.1",
+    "reflect-metadata": "^0.2.1",
+    "rxjs": "^7.8.1",
+    "helmet": "^7.1.0",
+    "compression": "^1.7.4",
+    "joi": "^17.12.2",
+    "winston": "^3.13.0",
+    "nest-winston": "^1.9.4",
+    "uuid": "^9.0.1",{{#eq auth "jwt"}}
+    "@nestjs/jwt": "^10.2.0",
+    "@nestjs/passport": "^10.0.3",
+    "passport": "^0.7.0",
+    "passport-jwt": "^4.0.1",
+    "bcryptjs": "^2.4.3",{{/eq}}{{#eq auth "jwt-refresh"}}
+    "@nestjs/jwt": "^10.2.0",
+    "@nestjs/passport": "^10.0.3",
+    "passport": "^0.7.0",
+    "passport-jwt": "^4.0.1",
+    "bcryptjs": "^2.4.3",{{/eq}}{{#eq auth "api-key"}}
+    "@nestjs/passport": "^10.0.3",
+    "passport": "^0.7.0",
+    "passport-headerapikey": "^1.2.2",{{/eq}}{{#eq orm "typeorm"}}
+    "@nestjs/typeorm": "^10.0.2",
+    "typeorm": "^0.3.20",{{/eq}}{{#eq orm "prisma"}}
+    "@prisma/client": "^5.11.0",{{/eq}}{{#eq orm "drizzle"}}
+    "drizzle-orm": "^0.30.8",{{/eq}}{{#eq orm "mongoose"}}
+    "@nestjs/mongoose": "^10.0.4",
+    "mongoose": "^8.3.0",{{/eq}}{{#eq database "postgres"}}
+    "pg": "^8.11.5",{{/eq}}{{#eq database "supabase"}}
+    "@supabase/supabase-js": "^2.43.0",
+    "pg": "^8.11.5",{{/eq}}{{#or (eq cache "redis") (eq queue "bullmq")}}
+    "ioredis": "^5.3.2",
+    "@nestjs/cache-manager": "^2.2.2",
+    "cache-manager": "^5.4.0",
+    "cache-manager-ioredis-yet": "^2.1.0",{{/or}}{{#eq queue "bullmq"}}
+    "@nestjs/bullmq": "^10.1.1",
+    "bullmq": "^5.7.0",{{/eq}}{{#eq mailer "nodemailer"}}
+    "@nestjs-modules/mailer": "^2.0.2",
+    "nodemailer": "^6.9.13",{{#eq emailTemplate "handlebars"}}
+    "handlebars": "^4.7.8",{{/eq}}{{#eq emailTemplate "ejs"}}
+    "ejs": "^3.1.10",{{/eq}}{{/eq}}{{#eq mailer "resend"}}
+    "@nestjs-modules/mailer": "^2.0.2",
+    "resend": "^3.2.0",{{#eq emailTemplate "handlebars"}}
+    "handlebars": "^4.7.8",{{/eq}}{{#eq emailTemplate "ejs"}}
+    "ejs": "^3.1.10",{{/eq}}{{/eq}}{{#eq storage "s3"}}
+    "@aws-sdk/client-s3": "^3.556.0",
+    "@aws-sdk/s3-request-presigner": "^3.556.0",
+    "multer": "^1.4.5-lts.1",
+    "@types/multer": "^1.4.11",{{/eq}}{{#eq storage "cloudinary"}}
+    "cloudinary": "^2.2.0",
+    "multer": "^1.4.5-lts.1",{{/eq}}{{#eq docs "swagger-scalar"}}
+    "@scalar/nestjs-api-reference": "^0.3.0",{{/eq}}{{#isTrue socket}}
+    "@nestjs/websockets": "^10.3.0",
+    "@nestjs/platform-socket.io": "^10.3.0",
+    "socket.io": "^4.7.5",{{/isTrue}}
+    "swagger-ui-express": "^5.0.0"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^10.3.2",
+    "@nestjs/schematics": "^10.1.1",
+    "@nestjs/testing": "^10.3.0",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.12.0",
+    "@types/compression": "^1.7.5",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/nodemailer": "^6.4.14",
+    "@types/passport-jwt": "^4.0.1",
+    "@types/uuid": "^9.0.8",
+    "@typescript-eslint/eslint-plugin": "^7.6.0",
+    "@typescript-eslint/parser": "^7.6.0",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^5.1.3",
+    "prettier": "^3.2.5",
+    "typescript": "^5.4.3",
+    "husky": "^9.0.11",
+    "lint-staged": "^15.2.2",{{#eq testing "unit"}}
+    "jest": "^29.7.0",
+    "@types/jest": "^29.5.12",
+    "ts-jest": "^29.1.2",{{/eq}}{{#eq testing "unit-e2e"}}
+    "jest": "^29.7.0",
+    "@types/jest": "^29.5.12",
+    "ts-jest": "^29.1.2",
+    "supertest": "^7.0.0",
+    "@types/supertest": "^6.0.2",{{/eq}}{{#eq orm "prisma"}}
+    "prisma": "^5.11.0",{{/eq}}{{#eq orm "drizzle"}}
+    "drizzle-kit": "^0.20.14",
+    "@types/pg": "^8.11.5",{{/eq}}{{#eq emailTemplate "ejs"}}
+    "@types/ejs": "^3.1.5",{{/eq}}{{#isTrue socket}}
+    "@types/socket.io": "^3.0.2",{{/isTrue}}
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0"
+  },
+  "jest": {
+    "moduleFileExtensions": ["js", "json", "ts"],
+    "rootDir": "src",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": { "^.+\\.(t|j)s$": "ts-jest" },
+    "collectCoverageFrom": ["**/*.(t|j)s"],
+    "coverageDirectory": "../coverage",
+    "testEnvironment": "node",
+    "moduleNameMapper": {
+      "^@config/(.*)$": "<rootDir>/config/$1",
+      "^@modules/(.*)$": "<rootDir>/modules/$1",
+      "^@infrastructure/(.*)$": "<rootDir>/infrastructure/$1",
+      "^@common/(.*)$": "<rootDir>/common/$1",
+      "^@shared/(.*)$": "<rootDir>/shared/$1",
+      "^@interfaces/(.*)$": "<rootDir>/interfaces/$1"
+    }
+  },
+  "lint-staged": {
+    "*.ts": ["eslint --fix", "prettier --write"]
+  }{{#eq orm "prisma"}},
+  "prisma": {
+    "seed": "ts-node -r tsconfig-paths/register prisma/seed.ts"
+  }{{/eq}}
+}

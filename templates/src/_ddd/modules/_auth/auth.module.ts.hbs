@@ -1,0 +1,44 @@
+import { Module } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
+import { PassportModule } from '@nestjs/passport';
+import { ConfigService } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
+import { AuthService } from './application/use-cases/auth.service';
+import { AuthController } from './presentation/http/controllers/auth.controller';
+import { JwtStrategy } from './infrastructure/strategies/jwt.strategy';
+{{#eq auth "jwt-refresh"}}
+import { JwtRefreshStrategy } from './infrastructure/strategies/jwt-refresh.strategy';
+{{/eq}}
+import { JwtAuthGuard } from './infrastructure/guards/jwt-auth.guard';
+import { UserModule } from '@modules/user/user.module';
+{{#ne mailer "none"}}
+import { MailerModule } from '@infrastructure/mail/mailer.module';
+{{/ne}}
+
+@Module({
+  imports: [
+    UserModule,
+    PassportModule,
+    {{#ne mailer "none"}}
+    MailerModule,
+    {{/ne}}
+    JwtModule.registerAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        secret: config.get<string>('JWT_SECRET'),
+        signOptions: { expiresIn: config.get<string>('JWT_EXPIRES_IN') ?? '15m' },
+      }),
+    }),
+  ],
+  controllers: [AuthController],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    {{#eq auth "jwt-refresh"}}
+    JwtRefreshStrategy,
+    {{/eq}}
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+  ],
+  exports: [AuthService],
+})
+export class AuthModule {}

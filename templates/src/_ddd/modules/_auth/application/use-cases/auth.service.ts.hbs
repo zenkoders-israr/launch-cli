@@ -1,0 +1,175 @@
+import {
+  Injectable,
+  UnauthorizedException,
+  ConflictException,
+  BadRequestException,
+  NotFoundException,
+  Inject,
+} from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
+import * as bcrypt from 'bcryptjs';
+import * as crypto from 'crypto';
+import { IUserRepository, USER_REPOSITORY } from '@modules/user/domain/repositories/user.repository.interface';
+import { UserEntity } from '@modules/user/domain/entities/user.entity';
+import { UserMapper } from '@modules/user/application/mappers/user.mapper';
+import {
+  RegisterDto,
+  LoginDto,
+  ForgotPasswordDto,
+  ResetPasswordDto,
+  ChangePasswordDto,
+  UpsertUserDto,
+} from '../dto/auth.dto';
+{{#ne mailer "none"}}
+import { MailService } from '@infrastructure/mail/mail.service';
+{{/ne}}
+
+@Injectable()
+export class AuthService {
+  constructor(
+    @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
+    private jwtService: JwtService,
+    private config: ConfigService,
+    {{#ne mailer "none"}}
+    private mailService: MailService,
+    {{/ne}}
+  ) {}
+
+  async register(dto: RegisterDto) {
+    const existing = await this.userRepo.findByEmail(dto.email);
+    if (existing) throw new ConflictException('Email already in use');
+
+    const rounds = this.config.get<number>('app.bcryptRounds') ?? 12;
+    const hashed = await bcrypt.hash(dto.password, rounds);
+    const user = UserEntity.create(crypto.randomUUID(), {
+      name: dto.name,
+      email: dto.email,
+      password: hashed,
+      resetPasswordToken: null,
+      resetPasswordExpiry: null,
+    });
+    await this.userRepo.save(user);
+
+    {{#ne mailer "none"}}
+    await this.mailService.sendWelcome(user.email, user.name);
+    {{/ne}}
+
+    return this.generateTokens(user.id, user.email);
+  }
+
+  async login(dto: LoginDto) {
+    const user = await this.userRepo.findByEmail(dto.email);
+    if (!user) throw new UnauthorizedException('Invalid credentials');
+
+    const valid = await bcrypt.compare(dto.password, user.password);
+    if (!valid) throw new UnauthorizedException('Invalid credentials');
+
+    return this.generateTokens(user.id, user.email);
+  }
+
+  async forgotPassword(dto: ForgotPasswordDto) {
+    const user = await this.userRepo.findByEmail(dto.email);
+    if (!user) return { sent: true };
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiry = new Date(Date.now() + 60 * 60 * 1000);
+    user.setResetToken(token, expiry);
+    await this.userRepo.update(user);
+
+    const appUrl = this.config.get<string>('app.url') ?? 'http://localhost:3000';
+    const resetUrl = `${appUrl}/reset-password?token=${token}`;
+
+    {{#ne mailer "none"}}
+    await this.mailService.sendPasswordReset(user.email, resetUrl);
+    {{/ne}}
+    {{#eq mailer "none"}}
+    if (process.env.NODE_ENV === 'development') {
+      // eslint-disable-next-line no-console
+      console.info(`[DEV] Password reset URL: ${resetUrl}`);
+    }
+    {{/eq}}
+
+    return { sent: true };
+  }
+
+  async resetPassword(dto: ResetPasswordDto) {
+    const users = await this.findByResetToken(dto.token);
+    if (!users) throw new BadRequestException('Invalid or expired reset token');
+
+    const rounds = this.config.get<number>('app.bcryptRounds') ?? 12;
+    const hashed = await bcrypt.hash(dto.newPassword, rounds);
+    users.changePassword(hashed);
+    users.clearResetToken();
+    await this.userRepo.update(users);
+
+    return { reset: true };
+  }
+
+  async changePassword(userId: string, dto: ChangePasswordDto) {
+    const user = await this.userRepo.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+
+    const valid = await bcrypt.compare(dto.currentPassword, user.password);
+    if (!valid) throw new UnauthorizedException('Current password is incorrect');
+
+    if (dto.currentPassword === dto.newPassword) {
+      throw new BadRequestException('New password must differ from current password');
+    }
+
+    const rounds = this.config.get<number>('app.bcryptRounds') ?? 12;
+    const hashed = await bcrypt.hash(dto.newPassword, rounds);
+    user.changePassword(hashed);
+    await this.userRepo.update(user);
+
+    return { changed: true };
+  }
+
+  async upsertUser(dto: UpsertUserDto) {
+    const existing = await this.userRepo.findByEmail(dto.email);
+    const rounds = this.config.get<number>('app.bcryptRounds') ?? 12;
+
+    if (existing) {
+      if (dto.name) existing.updateName(dto.name);
+      if (dto.password) existing.changePassword(await bcrypt.hash(dto.password, rounds));
+      const updated = await this.userRepo.update(existing);
+      return UserMapper.toDto(updated);
+    }
+
+    const user = UserEntity.create(crypto.randomUUID(), {
+      name: dto.name ?? '',
+      email: dto.email,
+      password: dto.password ? await bcrypt.hash(dto.password, rounds) : '',
+      resetPasswordToken: null,
+      resetPasswordExpiry: null,
+    });
+    const saved = await this.userRepo.save(user);
+    return UserMapper.toDto(saved);
+  }
+
+  private generateTokens(userId: string, email: string) {
+    const payload = { sub: userId, email };
+    const accessToken = this.jwtService.sign(payload);
+{{#eq auth "jwt-refresh"}}
+    const refreshToken = this.jwtService.sign(payload, {
+      secret: this.config.get<string>('JWT_REFRESH_SECRET'),
+      expiresIn: this.config.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d',
+    });
+    return { accessToken, refreshToken };
+{{/eq}}
+{{#eq auth "jwt"}}
+    return { accessToken };
+{{/eq}}
+  }
+{{#eq auth "jwt-refresh"}}
+
+  async refreshTokens(userId: string, email: string) {
+    return this.generateTokens(userId, email);
+  }
+{{/eq}}
+
+  private async findByResetToken(token: string): Promise<UserEntity | null> {
+    // NOTE: In production, query by token index in your ORM repository
+    return null;
+  }
+}

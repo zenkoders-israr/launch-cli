@@ -1,0 +1,127 @@
+import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
+import { WinstonModule } from 'nest-winston';
+import * as winston from 'winston';
+import appConfig from './config/app.config';
+import databaseConfig from './config/database.config';
+import { envValidationSchema } from './config/env.validation';
+import { HealthModule } from './health/health.module';
+import { UserModule } from './modules/user/user.module';
+{{#eq orm "typeorm"}}
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { AppDataSource } from './infrastructure/database/typeorm.config';
+{{/eq}}
+{{#eq orm "mongoose"}}
+import { MongooseModule } from '@nestjs/mongoose';
+{{/eq}}
+{{#eq orm "prisma"}}
+import { PrismaModule } from './infrastructure/database/prisma.module';
+{{/eq}}
+{{#ne auth "none"}}
+import { AuthModule } from './modules/auth/auth.module';
+{{/ne}}
+{{#or (eq cache "redis") (eq queue "bullmq")}}
+import { RedisModule } from './infrastructure/cache/redis/redis.module';
+{{/or}}
+{{#eq queue "bullmq"}}
+import { QueueModule } from './infrastructure/queue/bullmq/queue.module';
+{{/eq}}
+{{#ne mailer "none"}}
+import { MailerModule } from './infrastructure/mail/mailer.module';
+{{/ne}}
+{{#eq storage "s3"}}
+import { StorageModule } from './infrastructure/storage/storage.module';
+{{/eq}}
+{{#eq storage "cloudinary"}}
+import { StorageModule } from './infrastructure/storage/storage.module';
+{{/eq}}
+import { CronModule } from './infrastructure/scheduler/cron/cron.module';
+{{#isTrue socket}}
+import { SocketModule } from './modules/socket/socket.module';
+{{/isTrue}}
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      load: [appConfig, databaseConfig],
+      validationSchema: envValidationSchema,
+      validationOptions: { abortEarly: true },
+    }),
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => [
+        {
+          ttl: config.get<number>('app.throttle.ttl') ?? 60000,
+          limit: config.get<number>('app.throttle.limit') ?? 100,
+        },
+      ],
+    }),
+    WinstonModule.forRoot({
+      transports: [
+        new winston.transports.Console({
+          format:
+            process.env.NODE_ENV === 'production'
+              ? winston.format.combine(winston.format.timestamp(), winston.format.json())
+              : winston.format.combine(
+                  winston.format.colorize(),
+                  winston.format.timestamp(),
+                  winston.format.printf(({ level, message, timestamp, context }) => {
+                    return `${timestamp} [${context ?? 'App'}] ${level}: ${message}`;
+                  }),
+                ),
+        }),
+        ...(process.env.NODE_ENV === 'production'
+          ? [
+              new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
+              new winston.transports.File({ filename: 'logs/combined.log' }),
+            ]
+          : []),
+      ],
+    }),
+    ScheduleModule.forRoot(),
+    {{#eq orm "typeorm"}}
+    TypeOrmModule.forRootAsync({
+      useFactory: () => ({ ...AppDataSource.options, autoLoadEntities: true }),
+    }),
+    {{/eq}}
+    {{#eq orm "mongoose"}}
+    MongooseModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({ uri: config.get<string>('database.uri') }),
+    }),
+    {{/eq}}
+    {{#eq orm "prisma"}}
+    PrismaModule,
+    {{/eq}}
+    HealthModule,
+    UserModule,
+    {{#ne auth "none"}}
+    AuthModule,
+    {{/ne}}
+    {{#or (eq cache "redis") (eq queue "bullmq")}}
+    RedisModule,
+    {{/or}}
+    {{#eq queue "bullmq"}}
+    QueueModule,
+    {{/eq}}
+    {{#ne mailer "none"}}
+    MailerModule,
+    {{/ne}}
+    {{#eq storage "s3"}}
+    StorageModule,
+    {{/eq}}
+    {{#eq storage "cloudinary"}}
+    StorageModule,
+    {{/eq}}
+    CronModule,
+    {{#isTrue socket}}
+    SocketModule,
+    {{/isTrue}}
+  ],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+})
+export class AppModule {}

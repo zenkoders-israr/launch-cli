@@ -1,0 +1,20 @@
+import { registerAs } from '@nestjs/config';
+
+export default registerAs('database', () => ({
+  {{#eq database "postgres"}}
+  host: process.env.DB_HOST,
+  port: parseInt(process.env.DB_PORT ?? '5432', 10),
+  username: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  {{/eq}}
+  {{#eq database "mongodb"}}
+  uri: process.env.MONGO_URI,
+  {{/eq}}
+  {{#eq database "supabase"}}
+  url: process.env.SUPABASE_URL,
+  anonKey: process.env.SUPABASE_ANON_KEY,
+  serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+  databaseUrl: process.env.DATABASE_URL,
+  {{/eq}}
+}));

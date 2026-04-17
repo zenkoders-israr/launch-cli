@@ -1,0 +1,23 @@
+import { Module } from '@nestjs/common';
+import { TerminusModule } from '@nestjs/terminus';
+import { HttpModule } from '@nestjs/axios';
+import { HealthController } from './health.controller';
+{{#or (eq cache "redis") (eq queue "bullmq")}}
+import { RedisHealthIndicator } from './indicators/redis.health';
+import { RedisModule } from '@infrastructure/cache/redis/redis.module';
+{{/or}}
+
+@Module({
+  imports: [
+    TerminusModule,
+    HttpModule,
+    {{#or (eq cache "redis") (eq queue "bullmq")}}
+    RedisModule,
+    {{/or}}
+  ],
+  controllers: [HealthController],
+  {{#or (eq cache "redis") (eq queue "bullmq")}}
+  providers: [RedisHealthIndicator],
+  {{/or}}
+})
+export class HealthModule {}

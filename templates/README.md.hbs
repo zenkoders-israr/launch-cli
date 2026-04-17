@@ -1,0 +1,794 @@
+# {{projectName}}
+
+> Production-grade NestJS backend — scaffolded with [zen-cli](https://github.com/zenkoders/zen-cli)
+
+---
+
+## Table of Contents
+
+- [Stack](#stack)
+- [Project Structure](#project-structure)
+- [Getting Started](#getting-started)
+- [Environment Variables](#environment-variables)
+- [API Endpoints](#api-endpoints)
+- [API Response Format](#api-response-format)
+- [Authentication](#authentication)
+{{#eq socket true}}
+- [WebSocket](#websocket)
+{{/eq}}
+- [Database & Migrations](#database--migrations)
+- [Available Commands](#available-commands)
+- [Security](#security)
+- [Code Quality & Git Hooks](#code-quality--git-hooks)
+{{#eq cicd true}}
+- [CI/CD Pipeline](#cicd-pipeline)
+{{/eq}}
+{{#eq docker true}}
+- [Docker](#docker)
+{{/eq}}
+
+---
+
+## Stack
+
+| Layer | Choice |
+|---|---|
+| Framework | NestJS 10 |
+| Language | TypeScript 5 |
+| Database | {{#eq database "postgres"}}PostgreSQL{{/eq}}{{#eq database "mongodb"}}MongoDB{{/eq}}{{#eq database "supabase"}}Supabase (PostgreSQL + RLS){{/eq}} |
+| ORM | {{#eq orm "typeorm"}}TypeORM{{/eq}}{{#eq orm "prisma"}}Prisma{{/eq}}{{#eq orm "drizzle"}}Drizzle ORM{{/eq}}{{#eq orm "mongoose"}}Mongoose{{/eq}} |
+| Auth | {{#eq auth "jwt"}}JWT (access token){{/eq}}{{#eq auth "jwt-refresh"}}JWT + Refresh token rotation{{/eq}}{{#eq auth "api-key"}}API Key{{/eq}}{{#eq auth "none"}}None{{/eq}} |
+| Cache | {{#eq cache "redis"}}Redis (ioredis){{/eq}}{{#eq cache "in-memory"}}In-memory (cache-manager){{/eq}}{{#eq cache "none"}}None{{/eq}} |
+| Queue | {{#eq queue "bullmq"}}BullMQ (Redis){{/eq}}{{#eq queue "none"}}None{{/eq}} |
+| Mailer | {{#eq mailer "nodemailer"}}Nodemailer (SMTP){{/eq}}{{#eq mailer "resend"}}Resend{{/eq}}{{#eq mailer "none"}}None{{/eq}} |
+| Storage | {{#eq storage "s3"}}AWS S3{{/eq}}{{#eq storage "cloudinary"}}Cloudinary{{/eq}}{{#eq storage "none"}}None{{/eq}} |
+| Docs | {{#eq docs "swagger"}}Swagger UI{{/eq}}{{#eq docs "swagger-scalar"}}Swagger + Scalar{{/eq}} |
+{{#eq socket true}}
+| WebSocket | Socket.io (with JWT auth) |
+{{/eq}}
+| Architecture | {{#eq architecture "modular"}}Feature Modules{{/eq}}{{#eq architecture "ddd"}}Domain-Driven Design{{/eq}} |
+
+---
+
+## Project Structure
+
+```
+src/
+├── config/                   # Env validation, app/db config
+├── common/
+│   ├── decorators/           # @CurrentUser, @Public, @ApiPaginatedResponse
+│   ├── filters/              # Global HTTP exception filter
+│   ├── guards/               # JWT auth guard
+│   ├── helpers/              # ok() response helper
+│   ├── interceptors/         # Global response interceptor
+│   ├── middleware/           # Request ID middleware
+│   └── pipes/                # PaginationDto
+├── modules/
+│   ├── health/               # GET /health — DB, Redis, memory, disk checks
+{{#eq auth "none"}}{{else}}
+│   ├── auth/                 # Auth module — register, login, password flows
+{{/eq}}
+│   ├── user/                 # User module — profile CRUD
+{{#or (eq cache "redis") (eq queue "bullmq")}}
+│   ├── redis/                # Redis service + cache module
+{{/or}}
+{{#eq queue "bullmq"}}
+│   ├── queue/                # BullMQ queue + email processor
+{{/eq}}
+{{#eq mailer "nodemailer"}}
+│   ├── mailer/               # SMTP mailer + email templates
+{{/eq}}
+{{#eq mailer "resend"}}
+│   ├── mailer/               # Resend mailer + email templates
+{{/eq}}
+{{#eq storage "s3"}}
+│   ├── storage/              # AWS S3 file upload service
+{{/eq}}
+{{#eq storage "cloudinary"}}
+│   ├── storage/              # Cloudinary file upload service
+{{/eq}}
+{{#eq socket true}}
+│   └── socket/               # Socket.io gateway + WsJwtGuard
+{{/eq}}
+├── cron/                     # Scheduled jobs (@nestjs/schedule)
+{{#eq orm "typeorm"}}
+├── database/
+│   ├── typeorm.config.ts     # TypeORM DataSource
+│   ├── migrations/           # Migration files
+│   └── seeders/              # Database seeders
+{{/eq}}
+├── app.module.ts
+└── main.ts
+{{#eq orm "prisma"}}
+prisma/
+├── schema.prisma             # Prisma schema
+└── seed.ts                   # Database seeder
+{{/eq}}
+{{#eq orm "drizzle"}}
+src/database/
+├── schema.ts                 # Drizzle schema
+└── seeders/seed.ts           # Database seeder
+drizzle.config.ts             # Drizzle Kit config
+{{/eq}}
+```
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 20+
+{{#eq docker true}}
+- Docker + Docker Compose
+{{/eq}}
+{{#eq docker false}}
+- {{#eq database "postgres"}}PostgreSQL running locally{{/eq}}{{#eq database "mongodb"}}MongoDB running locally{{/eq}}{{#eq database "supabase"}}Supabase project created{{/eq}}
+{{#or (eq cache "redis") (eq queue "bullmq")}}
+- Redis running locally
+{{/or}}
+{{/eq}}
+
+### Setup
+
+```bash
+# 1. Clone and install
+cd {{projectName}}
+npm install
+
+# 2. Configure environment
+cp .env.example .env
+# Edit .env with your values
+
+{{#eq docker true}}
+# 3. Start infrastructure
+make docker-up
+
+{{/eq}}
+{{#eq orm "prisma"}}
+# {{#eq docker true}}4{{else}}3{{/eq}}. Run migrations and seed
+make migrate
+make seed
+
+{{/eq}}
+{{#eq orm "typeorm"}}
+# {{#eq docker true}}4{{else}}3{{/eq}}. Run migrations and seed
+make migrate
+make seed
+
+{{/eq}}
+{{#eq orm "drizzle"}}
+# {{#eq docker true}}4{{else}}3{{/eq}}. Run migrations and seed
+make migrate
+make seed
+
+{{/eq}}
+# Start development server
+make dev
+```
+
+Server starts at: `http://localhost:3000`
+
+---
+
+## Environment Variables
+
+Copy `.env.example` to `.env` and fill in all required values.
+
+```bash
+cp .env.example .env
+```
+
+### Required Variables
+
+| Variable | Description | Example |
+|---|---|---|
+| `NODE_ENV` | Runtime environment | `development` |
+| `PORT` | HTTP port | `3000` |
+| `APP_URL` | Public base URL (used in email links) | `http://localhost:3000` |
+{{#eq database "postgres"}}
+| `DB_HOST` | PostgreSQL host | `localhost` |
+| `DB_PORT` | PostgreSQL port | `5432` |
+| `DB_USER` | PostgreSQL username | `postgres` |
+| `DB_PASSWORD` | PostgreSQL password | `postgres` |
+| `DB_NAME` | Database name | `{{projectName}}_db` |
+{{/eq}}
+{{#eq orm "prisma"}}
+| `DATABASE_URL` | Full Prisma connection URL | `postgresql://user:pass@host:5432/db` |
+{{/eq}}
+{{#eq database "mongodb"}}
+| `MONGO_URI` | MongoDB connection string | `mongodb://localhost:27017/{{projectName}}` |
+{{/eq}}
+{{#eq database "supabase"}}
+| `SUPABASE_URL` | Supabase project URL | `https://<ref>.supabase.co` |
+| `SUPABASE_ANON_KEY` | Supabase anon key | from Supabase dashboard |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key | from Supabase dashboard |
+| `DATABASE_URL` | Direct Postgres connection URL | `postgresql://...` |
+{{/eq}}
+{{#or (eq auth "jwt") (eq auth "jwt-refresh")}}
+| `JWT_SECRET` | JWT signing secret (min 32 chars) | generate with `openssl rand -hex 64` |
+| `JWT_EXPIRES_IN` | Access token TTL | `15m` |
+{{/or}}
+{{#eq auth "jwt-refresh"}}
+| `JWT_REFRESH_SECRET` | Refresh token signing secret | generate with `openssl rand -hex 64` |
+| `JWT_REFRESH_EXPIRES_IN` | Refresh token TTL | `7d` |
+{{/eq}}
+{{#eq auth "api-key"}}
+| `API_KEY` | API key clients must send in `x-api-key` header | any strong random string |
+{{/eq}}
+| `BCRYPT_ROUNDS` | Password hashing cost (10–14) | `12` |
+{{#or (eq cache "redis") (eq queue "bullmq")}}
+| `REDIS_HOST` | Redis host | `localhost` |
+| `REDIS_PORT` | Redis port | `6379` |
+| `REDIS_PASSWORD` | Redis password (leave empty for local) | `` |
+{{/or}}
+{{#eq mailer "nodemailer"}}
+| `SMTP_HOST` | SMTP server host | `smtp.mailtrap.io` |
+| `SMTP_PORT` | SMTP port | `587` |
+| `SMTP_SECURE` | Use SSL (true for port 465) | `false` |
+| `SMTP_USER` | SMTP username | |
+| `SMTP_PASS` | SMTP password | |
+| `MAIL_FROM` | Sender address | `{{projectName}} <no-reply@example.com>` |
+{{/eq}}
+{{#eq mailer "resend"}}
+| `RESEND_API_KEY` | Resend API key | `re_...` — from resend.com/api-keys |
+| `MAIL_FROM` | Sender address | `{{projectName}} <no-reply@example.com>` |
+{{/eq}}
+{{#eq storage "s3"}}
+| `AWS_REGION` | AWS region | `us-east-1` |
+| `AWS_ACCESS_KEY_ID` | IAM access key | from AWS IAM console |
+| `AWS_SECRET_ACCESS_KEY` | IAM secret key | from AWS IAM console |
+| `S3_BUCKET` | S3 bucket name | `my-bucket` |
+{{/eq}}
+{{#eq storage "cloudinary"}}
+| `CLOUDINARY_CLOUD_NAME` | Cloudinary cloud name | from cloudinary.com/console |
+| `CLOUDINARY_API_KEY` | Cloudinary API key | from cloudinary.com/console |
+| `CLOUDINARY_API_SECRET` | Cloudinary API secret | from cloudinary.com/console |
+{{/eq}}
+| `THROTTLE_TTL` | Rate limit window (ms) | `60000` |
+| `THROTTLE_LIMIT` | Max requests per window per IP | `100` |
+| `CORS_ORIGINS` | Allowed origins (comma-separated) | `http://localhost:3000` |
+
+> **Tip:** Generate secure secrets with:
+> ```bash
+> node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+> ```
+
+---
+
+## API Endpoints
+
+Base URL: `http://localhost:{{PORT}}/api/v1`
+
+{{#eq auth "none"}}{{else}}
+### Auth — `/api/v1/auth`
+
+| Method | Endpoint | Auth | Rate Limit | Description |
+|---|---|---|---|---|
+| `POST` | `/auth/register` | Public | 5/min | Register new user |
+| `POST` | `/auth/login` | Public | 10/min | Login, returns token(s) |
+| `POST` | `/auth/forgot-password` | Public | 3/min | Send password reset email |
+| `POST` | `/auth/reset-password` | Public | 5/min | Reset password via token |
+| `GET` | `/auth/me` | 🔒 JWT | — | Get current user (guard demo) |
+| `PATCH` | `/auth/change-password` | 🔒 JWT | — | Change password |
+| `POST` | `/auth/upsert-user` | 🔒 JWT | — | Create or update user by email |
+{{#eq auth "jwt-refresh"}}
+| `POST` | `/auth/refresh` | 🔒 Refresh token | — | Rotate tokens |
+{{/eq}}
+
+#### Request / Response Examples
+
+**POST `/auth/register`**
+```json
+// Request
+{
+  "name": "John Doe",
+  "email": "john@example.com",
+  "password": "StrongP@ss1"
+}
+
+// Response 201
+{
+  "status": 201,
+  "message": "Registration successful",
+  "data": {
+    "accessToken": "eyJhbGci..."{{#eq auth "jwt-refresh"}},
+    "refreshToken": "eyJhbGci..."{{/eq}}
+  }
+}
+```
+
+**POST `/auth/login`**
+```json
+// Request
+{ "email": "john@example.com", "password": "StrongP@ss1" }
+
+// Response 200
+{
+  "status": 200,
+  "message": "Login successful",
+  "data": { "accessToken": "eyJhbGci..." }
+}
+```
+
+**POST `/auth/forgot-password`**
+```json
+// Request
+{ "email": "john@example.com" }
+
+// Response 200 — always succeeds (prevents email enumeration)
+{
+  "status": 200,
+  "message": "If that email exists, a reset link has been sent",
+  "data": null
+}
+```
+
+**POST `/auth/reset-password`**
+```json
+// Request
+{ "token": "<token-from-email>", "newPassword": "NewStrongP@ss1" }
+
+// Response 200
+{ "status": 200, "message": "Password reset successfully", "data": null }
+```
+
+**PATCH `/auth/change-password`** *(requires Bearer token)*
+```json
+// Request
+{ "currentPassword": "OldP@ss1", "newPassword": "NewStrongP@ss1" }
+
+// Response 200
+{ "status": 200, "message": "Password changed successfully", "data": null }
+```
+{{/eq}}
+
+### Users — `/api/v1/users`
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `GET` | `/users/me` | 🔒 JWT | Get own profile |
+| `PATCH` | `/users/me` | 🔒 JWT | Update own profile |
+| `DELETE` | `/users/me` | 🔒 JWT | Delete own account |
+
+### Health — `/api/v1/health`
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `GET` | `/health` | Public | Service health check |
+
+**Response**
+```json
+{
+  "status": 200,
+  "message": "Success",
+  "data": {
+    "status": "ok",
+    "info": {
+      {{#eq orm "typeorm"}}"database": { "status": "up" },{{/eq}}
+      {{#eq orm "mongoose"}}"mongodb": { "status": "up" },{{/eq}}
+      {{#or (eq cache "redis") (eq queue "bullmq")}}"redis": { "status": "up" },{{/or}}
+      "memory_heap": { "status": "up" },
+      "disk": { "status": "up" }
+    }
+  }
+}
+```
+
+---
+
+## API Response Format
+
+Every response — success or error — follows the same envelope:
+
+```typescript
+{
+  status: number;   // HTTP status code
+  message: string;  // Human-readable message
+  data: T | null;   // Payload or null on error
+}
+```
+
+**Success example**
+```json
+{ "status": 200, "message": "Profile fetched", "data": { "id": "...", "email": "..." } }
+```
+
+**Error example**
+```json
+{ "status": 401, "message": "Invalid credentials", "data": null }
+```
+
+**Validation error example**
+```json
+{ "status": 400, "message": "password must contain uppercase, lowercase, number and special character", "data": null }
+```
+
+---
+
+## Authentication
+
+{{#eq auth "none"}}
+No authentication is configured for this project.
+{{/eq}}
+
+{{#or (eq auth "jwt") (eq auth "jwt-refresh")}}
+This project uses **JWT Bearer token** authentication.
+
+### How to authenticate
+
+1. Call `POST /api/v1/auth/login` to get an access token
+2. Include the token in all protected requests:
+
+```
+Authorization: Bearer <accessToken>
+```
+
+### Route protection
+
+- All routes are **protected by default** via a global `JwtAuthGuard`
+- Mark a route as public with the `@Public()` decorator
+- Access the current user in any controller with `@CurrentUser()`
+
+```typescript
+// Public route — no token needed
+@Public()
+@Get('public-info')
+getPublicInfo() { ... }
+
+// Protected route — token required
+@Get('private-data')
+getPrivateData(@CurrentUser() user: { id: string; email: string }) { ... }
+```
+
+{{#eq auth "jwt-refresh"}}
+### Token rotation
+
+| Token | TTL | Usage |
+|---|---|---|
+| Access token | `15m` | Send in `Authorization` header |
+| Refresh token | `7d` | Send to `POST /auth/refresh` to get new pair |
+
+When the access token expires, call `POST /api/v1/auth/refresh` with the refresh token in the `Authorization` header to receive a new token pair.
+{{/eq}}
+{{/or}}
+
+{{#eq auth "api-key"}}
+This project uses **API Key** authentication.
+
+Send the key in every request header:
+```
+x-api-key: <your-api-key>
+```
+The key is configured via the `API_KEY` environment variable.
+{{/eq}}
+
+---
+
+{{#eq socket true}}
+## WebSocket
+
+Socket.io server runs on the same port as the HTTP server.
+
+### Connecting
+
+```javascript
+import { io } from 'socket.io-client';
+
+const socket = io('http://localhost:3000', {
+  auth: { token: 'Bearer <accessToken>' },
+});
+
+socket.on('connect', () => console.log('Connected:', socket.id));
+socket.on('connect_error', (err) => console.error('Auth failed:', err.message));
+```
+
+> Connections without a valid JWT are **immediately disconnected**.
+
+### Events
+
+| Direction | Event | Auth | Description |
+|---|---|---|---|
+| Client → Server | `ping` | 🔒 JWT | Send a ping with any payload |
+| Server → Client | `pong` | — | Echo response with userId |
+
+**Example**
+```javascript
+socket.emit('ping', { hello: 'world' });
+socket.on('pong', (data) => console.log(data));
+// { message: 'pong', userId: '...', echo: { hello: 'world' } }
+```
+
+### Broadcasting from services
+
+Inject `AppGateway` into any service to broadcast events:
+
+```typescript
+constructor(private gateway: AppGateway) {}
+
+// Broadcast to all connected clients
+this.gateway.emit('order-updated', { orderId: '123' });
+
+// Broadcast to a specific room
+this.gateway.emitToRoom('room-id', 'message', payload);
+```
+
+---
+
+{{/eq}}
+## Database & Migrations
+
+{{#eq orm "typeorm"}}
+### TypeORM
+
+```bash
+# Run all pending migrations
+make migrate
+
+# Generate a new migration (after changing entities)
+make migrate-gen name=AddUserRoles
+
+# Revert last migration
+make migrate-revert
+
+# Seed the database
+make seed
+```
+
+Migrations live in `src/database/migrations/`.
+Entities are auto-discovered from `**/*.entity.ts` files.
+{{/eq}}
+
+{{#eq orm "prisma"}}
+### Prisma
+
+```bash
+# Create and apply a new migration (development)
+make migrate
+
+# Apply migrations in production (no prompt)
+make migrate-prod
+
+# Open Prisma Studio (visual DB browser)
+make studio
+
+# Seed the database
+make seed
+```
+
+Schema lives in `prisma/schema.prisma`.
+After changing the schema, always run `make migrate` to keep the DB in sync.
+{{/eq}}
+
+{{#eq orm "drizzle"}}
+### Drizzle ORM
+
+```bash
+# Generate migration files from schema changes
+make migrate-gen
+
+# Apply pending migrations
+make migrate
+
+# Open Drizzle Studio (visual DB browser)
+make studio
+
+# Seed the database
+make seed
+```
+
+Schema lives in `src/database/schema.ts`.
+Config lives in `drizzle.config.ts`.
+{{/eq}}
+
+{{#eq orm "mongoose"}}
+### Mongoose
+
+MongoDB with Mongoose — schema-first approach.
+Schemas live alongside their modules in `*.schema.ts` files.
+No migration step required — MongoDB is schemaless.
+{{/eq}}
+
+---
+
+## Available Commands
+
+```bash
+make dev              # Start dev server with hot reload
+make build            # Compile TypeScript to dist/
+make start            # Run compiled production build
+make test             # Run unit tests
+make test-cov         # Run tests with coverage report
+make lint             # Lint and auto-fix
+make format           # Prettier format
+{{#eq docker true}}
+make docker-up        # Start all Docker services (DB, Redis, app)
+make docker-down      # Stop all Docker services
+make docker-build     # Rebuild and start Docker services
+make logs             # Tail app container logs
+{{/eq}}
+{{#eq orm "typeorm"}}
+make migrate          # Run pending migrations
+make migrate-gen      # Generate migration (name=MigrationName)
+make migrate-revert   # Revert last migration
+make seed             # Seed the database
+{{/eq}}
+{{#eq orm "prisma"}}
+make migrate          # Run Prisma migrations (dev)
+make migrate-prod     # Run Prisma migrations (production)
+make studio           # Open Prisma Studio
+make seed             # Seed the database
+{{/eq}}
+{{#eq orm "drizzle"}}
+make migrate          # Apply pending migrations
+make migrate-gen      # Generate migration files
+make studio           # Open Drizzle Studio
+make seed             # Seed the database
+{{/eq}}
+```
+
+---
+
+## Security
+
+| Feature | Detail |
+|---|---|
+| Helmet | Secure HTTP headers on every response |
+| CORS | Allowlist via `CORS_ORIGINS` env var |
+| Global rate limiting | `THROTTLE_LIMIT` req per `THROTTLE_TTL` ms per IP |
+| Auth endpoint throttling | Register: 5/min · Login: 10/min · Forgot password: 3/min |
+| Request ID | Every request gets a `x-request-id` header for tracing |
+| Env validation | Joi schema — app crashes on startup if required vars are missing |
+| Password policy | Min 8 chars, must include uppercase, lowercase, number, special char |
+| Password hashing | bcrypt with configurable rounds (`BCRYPT_ROUNDS`, default 12) |
+{{#or (eq auth "jwt") (eq auth "jwt-refresh")}}
+| JWT expiry | Short-lived access tokens (default 15m) |
+{{/or}}
+{{#eq auth "jwt-refresh"}}
+| Refresh rotation | New token pair issued on every refresh |
+{{/eq}}
+| Validation pipe | `whitelist: true` — strips unknown fields from all request bodies |
+
+---
+
+## Code Quality & Git Hooks
+
+### Husky hooks
+
+| Hook | Runs | Checks |
+|---|---|---|
+| `pre-commit` | On every commit | ESLint + Prettier via lint-staged |
+| `pre-push` | Before every push | Lint · No `console.log` · No commented-out code · No `.log` files |
+
+### Lint-staged (on commit)
+
+- ESLint auto-fix on all `*.ts` files
+- Prettier format on all `*.ts` files
+- Blocks commit if `console.log/warn/error` found
+- Blocks commit if `.log` files are staged
+
+### ESLint rules
+
+- `@typescript-eslint/no-explicit-any` — warn
+- `@typescript-eslint/no-unused-vars` — error (ignores `_` prefixed params)
+- Prettier enforced as ESLint rule
+
+---
+
+{{#eq cicd true}}
+## CI/CD Pipeline
+
+GitHub Actions workflow at `.github/workflows/dev.yml`.
+
+**Trigger:** Push to `main` branch
+
+**Steps:**
+1. Checkout code
+2. Install Node.js 22
+3. Install dependencies
+4. Run linter
+{{#eq testing "unit"}}
+5. Run unit tests
+6. Archive `node_modules`
+7. Build (`npm run build`)
+8. Archive `dist/`
+9. SCP build to EC2 `~/builds`
+10. SCP node_modules to EC2 `~/modules`
+11. SSH into EC2 and run `./deploy.sh`
+{{/eq}}
+{{#eq testing "unit-e2e"}}
+5. Run unit tests
+6. Run E2E tests
+7. Archive `node_modules`
+8. Build (`npm run build`)
+9. Archive `dist/`
+10. SCP build to EC2 `~/builds`
+11. SCP node_modules to EC2 `~/modules`
+12. SSH into EC2 and run `./deploy.sh`
+{{/eq}}
+{{#eq testing "none"}}
+5. Archive `node_modules`
+6. Build (`npm run build`)
+7. Archive `dist/`
+8. SCP build to EC2 `~/builds`
+9. SCP node_modules to EC2 `~/modules`
+10. SSH into EC2 and run `./deploy.sh`
+{{/eq}}
+
+### Required GitHub Secrets
+
+Go to **Settings → Secrets and variables → Actions** and add:
+
+| Secret | Description |
+|---|---|
+| `HOST` | EC2 public IP or hostname |
+| `USER` | SSH username (e.g. `ubuntu`) |
+| `KEY` | Private SSH key (contents of `.pem` file) |
+
+---
+
+{{/eq}}
+{{#eq docker true}}
+## Docker
+
+```bash
+# Start all services in background
+make docker-up
+
+# Rebuild images and start
+make docker-build
+
+# Stop all services
+make docker-down
+
+# Tail app logs
+make logs
+```
+
+### Services
+
+| Service | Port | Description |
+|---|---|---|
+| `app` | `3000` | NestJS application |
+{{#eq database "postgres"}}
+| `postgres` | `5432` | PostgreSQL database |
+| `adminer` | `8080` | Database UI — `http://localhost:8080` |
+{{/eq}}
+{{#eq database "mongodb"}}
+| `mongo` | `27017` | MongoDB |
+{{/eq}}
+{{#or (eq cache "redis") (eq queue "bullmq")}}
+| `redis` | `6379` | Redis |
+{{/or}}
+
+> The app container has a built-in healthcheck hitting `GET /api/v1/health`.
+
+---
+
+{{/eq}}
+## API Documentation
+
+{{#eq docs "swagger"}}
+Swagger UI is available at:
+
+```
+http://localhost:3000/api/docs
+```
+{{/eq}}
+{{#eq docs "swagger-scalar"}}
+| UI | URL |
+|---|---|
+| Swagger UI | `http://localhost:3000/api/docs` |
+| Scalar (modern) | `http://localhost:3000/api/reference` |
+{{/eq}}
+
+{{#or (eq auth "jwt") (eq auth "jwt-refresh")}}
+To test protected endpoints in Swagger:
+1. Call `POST /auth/login`
+2. Copy the `accessToken` from the response
+3. Click **Authorize** (top right) and paste the token
+{{/or}}
+
+---
+
+*Generated by [launch-cli](https://www.npmjs.com/package/launch-cli)*

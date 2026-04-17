@@ -1,0 +1,47 @@
+import { Controller, Get, Patch, Delete, Body, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { GetUserUseCase } from '../../../application/use-cases/get-user.use-case';
+import { UpdateUserUseCase } from '../../../application/use-cases/update-user.use-case';
+import { DeleteUserUseCase } from '../../../application/use-cases/delete-user.use-case';
+import { UpdateUserDto } from '../../../application/dto/user.dto';
+import { CurrentUser } from '@interfaces/http/decorators/current-user.decorator';
+import { ok } from '@interfaces/http/helpers/response.helper';
+{{#ne auth "none"}}
+import { JwtAuthGuard } from '@modules/auth/infrastructure/guards/jwt-auth.guard';
+{{/ne}}
+
+@ApiTags('Users')
+{{#ne auth "none"}}
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
+{{/ne}}
+@Controller('users')
+export class UserController {
+  constructor(
+    private readonly getUser: GetUserUseCase,
+    private readonly updateUser: UpdateUserUseCase,
+    private readonly deleteUser: DeleteUserUseCase,
+  ) {}
+
+  @Get('me')
+  @ApiOperation({ summary: 'Get current user profile' })
+  async getMe(@CurrentUser() user: { id: string }) {
+    const data = await this.getUser.execute(user.id);
+    return ok('Profile fetched', data);
+  }
+
+  @Patch('me')
+  @ApiOperation({ summary: 'Update current user profile' })
+  async updateMe(@CurrentUser() user: { id: string }, @Body() dto: UpdateUserDto) {
+    const data = await this.updateUser.execute(user.id, dto.name ?? '');
+    return ok('Profile updated', data);
+  }
+
+  @Delete('me')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Delete current user account' })
+  async deleteMe(@CurrentUser() user: { id: string }) {
+    await this.deleteUser.execute(user.id);
+    return ok('Account deleted', null);
+  }
+}

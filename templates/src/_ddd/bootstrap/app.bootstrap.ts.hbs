@@ -1,0 +1,56 @@
+import { INestApplication, ValidationPipe, VersioningType } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import helmet from 'helmet';
+import compression from 'compression';
+import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
+import { HttpExceptionFilter } from '@interfaces/http/filters/http-exception.filter';
+import { ResponseInterceptor } from '@interfaces/http/interceptors/response.interceptor';
+import { RequestIdMiddleware } from '@interfaces/http/middleware/request-id.middleware';
+{{#eq docs "swagger-scalar"}}
+import { ApiReference } from '@scalar/nestjs-api-reference';
+{{/eq}}
+
+export async function appBootstrap(app: INestApplication): Promise<void> {
+  const config = app.get(ConfigService);
+  const corsOrigins = config.get<string[]>('app.corsOrigins') ?? [];
+
+  app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
+  app.use(helmet());
+  app.use(compression());
+  app.enableCors({ origin: corsOrigins, credentials: true });
+  app.use(RequestIdMiddleware);
+
+  app.setGlobalPrefix('api');
+  app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
+
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+      transformOptions: { enableImplicitConversion: true },
+    }),
+  );
+  app.useGlobalFilters(new HttpExceptionFilter());
+  app.useGlobalInterceptors(new ResponseInterceptor());
+
+  const docBuilder = new DocumentBuilder()
+    .setTitle('{{projectName}} API')
+    .setDescription('API documentation')
+    .setVersion('1.0');
+
+{{#or (eq auth "jwt") (eq auth "jwt-refresh")}}
+  docBuilder.addBearerAuth();
+{{/or}}
+{{#eq auth "api-key"}}
+  docBuilder.addApiKey({ type: 'apiKey', in: 'header', name: 'x-api-key' }, 'api-key');
+{{/eq}}
+
+  const document = SwaggerModule.createDocument(app, docBuilder.build());
+  SwaggerModule.setup('api/docs', app, document);
+
+{{#eq docs "swagger-scalar"}}
+  app.use('/api/reference', ApiReference({ spec: { content: document } }));
+{{/eq}}
+}

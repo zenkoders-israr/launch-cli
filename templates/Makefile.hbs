@@ -1,0 +1,74 @@
+.PHONY: dev build start test lint format docker-up docker-down migrate
+
+dev:
+	npm run start:dev
+
+build:
+	npm run build
+
+start:
+	npm run start:prod
+
+test:
+	npm run test
+
+test-cov:
+	npm run test:cov
+
+lint:
+	npm run lint
+
+format:
+	npm run format
+
+docker-up:
+	docker compose up -d
+
+docker-down:
+	docker compose down
+
+docker-build:
+	docker compose up -d --build
+
+{{#eq orm "typeorm"}}
+migrate:
+	npm run migration:run
+
+migrate-gen:
+	npm run migration:generate -- src/database/migrations/$(name)
+
+migrate-revert:
+	npm run migration:revert
+
+seed:
+	npm run seed
+{{/eq}}
+{{#eq orm "prisma"}}
+migrate:
+	npm run prisma:migrate
+
+migrate-prod:
+	npm run prisma:migrate:prod
+
+studio:
+	npm run prisma:studio
+
+seed:
+	npx prisma db seed
+{{/eq}}
+{{#eq orm "drizzle"}}
+migrate:
+	npm run drizzle:migrate
+
+migrate-gen:
+	npm run drizzle:generate
+
+studio:
+	npm run drizzle:studio
+
+seed:
+	npm run seed
+{{/eq}}
+
+logs:
+	docker compose logs -f app

@@ -1,0 +1,41 @@
+import { Injectable } from '@nestjs/common';
+import { MailerService } from '@nestjs-modules/mailer';
+{{#eq emailTemplate "html"}}
+import { renderHtmlTemplate } from './templates/html-template.util';
+import { join } from 'path';
+{{/eq}}
+
+@Injectable()
+export class MailService {
+  constructor(private mailer: MailerService) {}
+
+  async sendWelcome(to: string, name: string): Promise<void> {
+{{#eq emailTemplate "html"}}
+    const html = renderHtmlTemplate(join(__dirname, 'templates', 'welcome.html'), { name });
+    await this.mailer.sendMail({ to, subject: 'Welcome!', html });
+{{/eq}}
+{{#ne emailTemplate "html"}}
+    await this.mailer.sendMail({
+      to,
+      subject: 'Welcome!',
+      template: 'welcome',
+      context: { name },
+    });
+{{/ne}}
+  }
+
+  async sendPasswordReset(to: string, resetUrl: string): Promise<void> {
+{{#eq emailTemplate "html"}}
+    const html = renderHtmlTemplate(join(__dirname, 'templates', 'password-reset.html'), { resetUrl });
+    await this.mailer.sendMail({ to, subject: 'Reset your password', html });
+{{/eq}}
+{{#ne emailTemplate "html"}}
+    await this.mailer.sendMail({
+      to,
+      subject: 'Reset your password',
+      template: 'password-reset',
+      context: { resetUrl },
+    });
+{{/ne}}
+  }
+}

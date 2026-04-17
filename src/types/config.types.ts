@@ -1,0 +1,31 @@
+export type Database = 'postgres' | 'mongodb' | 'supabase';
+export type Architecture = 'modular' | 'ddd';
+export type AuthStrategy = 'jwt' | 'jwt-refresh' | 'api-key' | 'none';
+export type CacheLayer = 'redis' | 'in-memory' | 'none';
+export type QueueWorker = 'bullmq' | 'none';
+export type Mailer = 'nodemailer' | 'resend' | 'none';
+export type EmailTemplate = 'handlebars' | 'ejs' | 'html';
+export type FileStorage = 's3' | 'cloudinary' | 'none';
+export type ApiDocs = 'swagger' | 'swagger-scalar';
+export type Testing = 'unit' | 'unit-e2e' | 'none';
+export type OrmChoice = 'typeorm' | 'drizzle' | 'prisma' | 'mongoose';
+
+export interface ProjectConfig {
+  projectName: string;
+  database: Database;
+  orm: OrmChoice;
+  architecture: Architecture;
+  auth: AuthStrategy;
+  cache: CacheLayer;
+  queue: QueueWorker;
+  mailer: Mailer;
+  emailTemplate: EmailTemplate | null;
+  smtp: boolean;
+  storage: FileStorage;
+  docs: ApiDocs;
+  testing: Testing;
+  socket: boolean;
+  docker: boolean;
+  cicd: boolean;
+  packageManager: 'npm' | 'yarn' | 'pnpm';
+}

@@ -1,0 +1,17 @@
+# Source — not needed at runtime, dist/ is shipped instead
+src/
+
+# Dev config
+tsconfig.json
+.eslintrc*
+.prettierrc*
+
+# Local dev artifacts
+node_modules/
+*.log
+.env
+
+# Git
+.git/
+.gitignore
+.husky/

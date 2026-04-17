@@ -1,0 +1,82 @@
+name: CI/CD
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Lint
+        run: npm run lint
+{{#eq testing "unit"}}
+
+      - name: Run tests
+        run: npm run test
+{{/eq}}
+{{#eq testing "unit-e2e"}}
+
+      - name: Run unit tests
+        run: npm run test
+
+      - name: Run E2E tests
+        run: npm run test:e2e
+        env:
+          NODE_ENV: test
+{{/eq}}
+
+      - name: Archive dependencies
+        run: tar -czvf node_modules.tar.gz ./node_modules
+
+      - name: Make build
+        run: npm run build
+
+      - name: Archive build
+        run: tar -czvf build.tar.gz ./dist
+
+      - name: Copy archived build to EC2
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USER }}
+          key: ${{ secrets.KEY }}
+          port: 22
+          source: "build.tar.gz"
+          target: "~/builds"
+          debug: true
+
+      - name: Copy archived node_modules to EC2
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USER }}
+          key: ${{ secrets.KEY }}
+          port: 22
+          source: "node_modules.tar.gz"
+          target: "~/modules"
+          debug: true
+
+      - name: Execute deployment script
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USER }}
+          key: ${{ secrets.KEY }}
+          port: 22
+          script: |
+            cd ~/new-backend
+            export PATH=/home/ubuntu/.nvm/versions/node/v22.16.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
+            ./deploy.sh

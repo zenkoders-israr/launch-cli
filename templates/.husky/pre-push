@@ -1,0 +1,29 @@
+#!/usr/bin/env sh
+
+echo "🔍 Running pre-push checks..."
+
+npm run lint
+if [ $? -ne 0 ]; then
+  echo "❌ Lint failed. Fix errors before pushing."
+  exit 1
+fi
+
+CONSOLE_FOUND=$(git diff origin/main...HEAD --unified=0 -- '*.ts' 2>/dev/null | grep '^\+' | grep -v '^\+\+\+' | grep -E 'console\.(log|error|warn|debug|info)\s*\(')
+if [ -n "$CONSOLE_FOUND" ]; then
+  echo "❌ console.log/warn/error found in push. Use the Logger service instead."
+  exit 1
+fi
+
+COMMENTED_CODE=$(git diff origin/main...HEAD --unified=0 -- '*.ts' 2>/dev/null | grep '^\+' | grep -v '^\+\+\+' | grep -E '^\+\s*//\s*(const|let|var|return|if|for|while|function|import|export|await|throw|class)\b')
+if [ -n "$COMMENTED_CODE" ]; then
+  echo "❌ Commented-out code found. Remove it before pushing."
+  exit 1
+fi
+
+LOG_FILES=$(git diff --cached --name-only 2>/dev/null | grep '\.log$')
+if [ -n "$LOG_FILES" ]; then
+  echo "❌ Log files detected in commit. Remove .log files before pushing."
+  exit 1
+fi
+
+echo "✅ Pre-push checks passed."
