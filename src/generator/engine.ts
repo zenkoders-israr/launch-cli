@@ -37,7 +37,14 @@ Handlebars.registerHelper('isTrue', function(this: any, val: unknown, options: {
   const result = val === true || val === 'true';
   return result ? options.fn(this) : options.inverse(this);
 });
-Handlebars.registerHelper('includes', (arr: string[], val: string) => arr?.includes(val));
+// Works both as inline {{#if (includes arr val)}} and as block {{#includes arr val}}...{{/includes}}
+Handlebars.registerHelper('includes', function(this: unknown, arr: string[], val: string, options: { fn?: (c: unknown) => string; inverse?: (c: unknown) => string }) {
+  const hit = Array.isArray(arr) && arr.includes(val);
+  if (options && typeof options.fn === 'function') {
+    return hit ? options.fn(this) : (options.inverse ? options.inverse(this) : '');
+  }
+  return hit;
+});
 Handlebars.registerHelper('camel', (str: string) =>
   str.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase()),
 );
@@ -134,7 +141,7 @@ function resolveFileName(name: string, config: ProjectConfig): string {
     .replace(/^_prisma$/, 'prisma')
     .replace(/^_drizzle$/, 'src/database')
     // strip conditional prefixes from filenames (e.g. _refresh.jwt-refresh.strategy.ts, _prisma.prisma.module.ts)
-    .replace(/^_(refresh|jwt|apikey|smtp|test|e2e|scalar|supabase|postgres|mongodb|prisma|typeorm|drizzle|mongoose)\./, '')
+    .replace(/^_(refresh|jwt|apikey|smtp|test|e2e|scalar|supabase|postgres|mongodb|prisma|typeorm|drizzle|mongoose|oauth|rbac|2fa|stripe|fcm|twilio|multitenancy|redis)\./, '')
     // infrastructure feature dirs — strip leading underscore to canonical names
     .replace(/^_redis$/, 'cache/redis')
     .replace(/^_bullmq$/, 'queue/bullmq')
@@ -145,6 +152,14 @@ function resolveFileName(name: string, config: ProjectConfig): string {
     .replace(/^_auth$/, 'auth')
     // _socket maps to socket (relative to its parent dir)
     .replace(/^_socket$/, 'socket')
+    // New infrastructure feature dirs
+    .replace(/^_stripe$/, 'payments/stripe')
+    .replace(/^_fcm$/, 'notifications/fcm')
+    .replace(/^_twilio$/, 'notifications/twilio')
+    // New module dirs
+    .replace(/^_multitenancy$/, 'multitenancy')
+    // Strip new file-level prefixes
+    .replace(/^_(oauth|rbac|2fa|stripe|fcm|twilio|multitenancy)\./, '')
     // strip .hbs suffix from CLI template wrappers only
     // keeps .hbs on email content files (welcome.hbs, password-reset.hbs)
     .replace(/\.hbs$/, (m, _o, full: string) => {
@@ -159,6 +174,7 @@ function resolveFileName(name: string, config: ProjectConfig): string {
 
 function shouldInclude(name: string, config: ProjectConfig): boolean {
   const guards: Record<string, boolean> = {
+    // Existing
     '_redis': config.cache === 'redis' || config.queue === 'bullmq',
     '_bullmq': config.queue === 'bullmq',
     '_mailer': config.mailer !== 'none',
@@ -187,6 +203,14 @@ function shouldInclude(name: string, config: ProjectConfig): boolean {
     '_supabase': config.database === 'supabase',
     '_postgres': config.database === 'postgres',
     '_mongodb': config.database === 'mongodb',
+    // New features
+    '_oauth': Array.isArray(config.oauthProviders) && config.oauthProviders.length > 0,
+    '_rbac': config.rbac === true,
+    '_2fa': config.twoFactor === true,
+    '_stripe': config.stripe === true,
+    '_fcm': config.fcm === true,
+    '_twilio': config.sms === true,
+    '_multitenancy': config.multiTenancy !== 'none',
   };
 
   for (const [prefix, allowed] of Object.entries(guards)) {

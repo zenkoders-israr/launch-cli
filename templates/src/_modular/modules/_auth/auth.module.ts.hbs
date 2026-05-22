@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
+{{#or (eq auth "jwt") (eq auth "jwt-refresh")}}
 import { JwtModule } from '@nestjs/jwt';
+{{/or}}
 import { PassportModule } from '@nestjs/passport';
 import { ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
@@ -14,6 +16,22 @@ import { UserModule } from '@modules/user/user.module';
 {{#ne mailer "none"}}
 import { MailerModule } from '@infrastructure/mail/mailer.module';
 {{/ne}}
+{{#if oauthProviders.length}}
+import { OAuthController } from './oauth.controller';
+{{#includes oauthProviders "google"}}
+import { GoogleStrategy } from './strategies/google.strategy';
+{{/includes}}
+{{#includes oauthProviders "github"}}
+import { GithubStrategy } from './strategies/github.strategy';
+{{/includes}}
+{{/if}}
+{{#isTrue rbac}}
+import { RolesGuard } from '@common/guards/roles.guard';
+{{/isTrue}}
+{{#isTrue twoFactor}}
+import { TwoFactorService } from './two-factor.service';
+import { TwoFactorController } from './two-factor.controller';
+{{/isTrue}}
 
 @Module({
   imports: [
@@ -22,6 +40,7 @@ import { MailerModule } from '@infrastructure/mail/mailer.module';
     {{#ne mailer "none"}}
     MailerModule,
     {{/ne}}
+    {{#or (eq auth "jwt") (eq auth "jwt-refresh")}}
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
@@ -29,16 +48,37 @@ import { MailerModule } from '@infrastructure/mail/mailer.module';
         signOptions: { expiresIn: config.get<string>('JWT_EXPIRES_IN') ?? '15m' },
       }),
     }),
+    {{/or}}
   ],
-  controllers: [AuthController],
+  controllers: [
+    AuthController,
+    {{#if oauthProviders.length}}
+    OAuthController,
+    {{/if}}
+    {{#isTrue twoFactor}}
+    TwoFactorController,
+    {{/isTrue}}
+  ],
   providers: [
     AuthService,
     JwtStrategy,
     {{#eq auth "jwt-refresh"}}
     JwtRefreshStrategy,
     {{/eq}}
+    {{#includes oauthProviders "google"}}
+    GoogleStrategy,
+    {{/includes}}
+    {{#includes oauthProviders "github"}}
+    GithubStrategy,
+    {{/includes}}
+    {{#isTrue twoFactor}}
+    TwoFactorService,
+    {{/isTrue}}
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    {{#isTrue rbac}}
+    { provide: APP_GUARD, useClass: RolesGuard },
+    {{/isTrue}}
   ],
-  exports: [AuthService],
+  exports: [AuthService{{#isTrue twoFactor}}, TwoFactorService{{/isTrue}}],
 })
 export class AuthModule {}

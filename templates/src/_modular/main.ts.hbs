@@ -4,7 +4,13 @@ import { AppModule } from './app.module';
 import { appBootstrap } from './bootstrap/app.bootstrap';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create(AppModule, {
+    bufferLogs: true,
+{{#isTrue stripe}}
+    rawBody: true,   // required for Stripe webhook signature verification
+{{/isTrue}}
+  });
+  app.enableShutdownHooks();
   await appBootstrap(app);
 
   const config = app.get(ConfigService);

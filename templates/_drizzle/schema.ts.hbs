@@ -1,0 +1,29 @@
+import { pgTable, uuid, varchar, timestamp, boolean{{#isTrue rbac}}, pgEnum{{/isTrue}} } from 'drizzle-orm/pg-core';
+
+{{#isTrue rbac}}
+export const roleEnum = pgEnum('role', ['admin', 'user', 'moderator']);
+{{/isTrue}}
+
+export const users = pgTable('users', {
+  id:                  uuid('id').primaryKey().defaultRandom(),
+  name:                varchar('name', { length: 255 }).notNull(),
+  email:               varchar('email', { length: 255 }).notNull().unique(),
+  password:            varchar('password').notNull(),
+  resetPasswordToken:  varchar('reset_password_token'),
+  resetPasswordExpiry: timestamp('reset_password_expiry'),
+{{#isTrue rbac}}
+  role:                roleEnum('role').notNull().default('user'),
+{{/isTrue}}
+{{#isTrue twoFactor}}
+  twoFactorEnabled:    boolean('two_factor_enabled').default(false).notNull(),
+  twoFactorSecret:     varchar('two_factor_secret'),
+{{/isTrue}}
+{{#ne multiTenancy "none"}}
+  tenantId:            uuid('tenant_id').notNull(),
+{{/ne}}
+  createdAt:           timestamp('created_at').defaultNow().notNull(),
+  updatedAt:           timestamp('updated_at').defaultNow().notNull(),
+});
+
+export type User = typeof users.$inferSelect;
+export type NewUser = typeof users.$inferInsert;

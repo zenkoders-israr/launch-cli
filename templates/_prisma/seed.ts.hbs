@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient{{#isTrue rbac}}, Role{{/isTrue}} } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -15,6 +15,11 @@ async function main() {
       name: 'Admin',
       email: 'admin@example.com',
       password: hashed,
+{{#isTrue rbac}}
+      role: Role.admin,
+{{/isTrue}}{{#ne multiTenancy "none"}}
+      tenantId: '00000000-0000-0000-0000-000000000000',
+{{/ne}}
     },
   });
 

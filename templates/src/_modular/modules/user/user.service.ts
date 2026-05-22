@@ -8,6 +8,10 @@ export interface User {
   password: string;
   resetPasswordToken: string | null;
   resetPasswordExpiry: Date | null;
+  role: string;
+  twoFactorEnabled?: boolean;
+  twoFactorSecret?: string | null;
+  tenantId?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -22,7 +26,7 @@ function safeTokenCompare(a: string, b: string): boolean {
   }
 }
 
-// In-memory store — replace with your repository implementation
+// In-memory store — replace with your ORM repository implementation
 const store: User[] = [];
 
 @Injectable()
@@ -35,6 +39,7 @@ export class UserService {
       password: data.password ?? '',
       resetPasswordToken: null,
       resetPasswordExpiry: null,
+      role: data.role ?? 'user',
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -46,6 +51,10 @@ export class UserService {
     const user = store.find((u) => u.id === id);
     if (!user) throw new NotFoundException('User not found');
     return this.sanitize(user);
+  }
+
+  async findByIdRaw(id: string): Promise<User | undefined> {
+    return store.find((u) => u.id === id);
   }
 
   async findByEmailRaw(email: string): Promise<User | undefined> {

@@ -14,9 +14,10 @@ export class EmailProcessor extends WorkerHost {
   private readonly logger = new Logger(EmailProcessor.name);
 
   async process(job: Job<EmailJobData>): Promise<void> {
-    this.logger.log(`Processing email job ${job.id} to ${job.data.to}`);
-    // TODO: Integrate with mailer service
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    this.logger.log(`Email sent to ${job.data.to}`);
+    this.logger.log(`Processing email job ${job.id} → ${job.data.to}`);
+    // TODO: Inject and call MailService here
+    // jobId is set to a hash of (to + subject) at enqueue time — BullMQ deduplicates automatically
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    this.logger.log(`Email dispatched to ${job.data.to}`);
   }
 }

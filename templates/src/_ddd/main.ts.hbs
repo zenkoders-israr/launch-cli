@@ -5,6 +5,7 @@ import { appBootstrap } from './bootstrap/app.bootstrap';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  app.enableShutdownHooks();
   await appBootstrap(app);
 
   const config = app.get(ConfigService);

@@ -7,6 +7,7 @@ import { UserService } from '@modules/user/user.service';
 export interface JwtPayload {
   sub: string;
   email: string;
+  role?: string;
   iat?: number;
   exp?: number;
 }
@@ -27,6 +28,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   async validate(payload: JwtPayload) {
     const user = await this.userService.findById(payload.sub);
     if (!user) throw new UnauthorizedException();
-    return user;
+    // Merge role from token into user so RolesGuard can read it without a DB hit
+    return { ...user, role: payload.role ?? user.role };
   }
 }

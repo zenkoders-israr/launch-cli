@@ -6,6 +6,16 @@ export interface UserEntity {
   password: string;
   resetPasswordToken: string | null;
   resetPasswordExpiry: Date | null;
+{{#isTrue rbac}}
+  role: 'admin' | 'user' | 'moderator';
+{{/isTrue}}
+{{#isTrue twoFactor}}
+  twoFactorEnabled: boolean;
+  twoFactorSecret: string | null;
+{{/isTrue}}
+{{#isTrue multiTenancy}}
+  tenantId: string;
+{{/isTrue}}
   createdAt: Date;
   updatedAt: Date;
 }
