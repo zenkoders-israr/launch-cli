@@ -1,13 +1,14 @@
-# CLAUDE.md — launch-cli (zen)
+# CLAUDE.md — launch-cli
 
 ## Project Overview
 
-**launch-cli** is a NestJS scaffolding CLI (`zen` binary) that generates fully configured, production-ready NestJS backends interactively. It's a generator tool — not a framework — that produces zero-dead-code projects from Handlebars templates based on user selections.
+**launch-cli** is a NestJS scaffolding CLI (`zen` binary, `launch server` command) that generates fully configured, production-ready NestJS backends from Handlebars templates based on interactive user selections. It's a generator tool — not a framework.
 
 - **Binary:** `zen` (invoked as `launch server`)
-- **Node.js:** ≥20.0.0, npm ≥9.0.0
+- **Node.js requirement:** ≥20.0.0, npm ≥9.0.0
 - **Language:** TypeScript 5.3
 - **Template engine:** Handlebars 4.7
+- **Test coverage:** 5 combination builds verified green (TypeORM/JWT, Prisma/full, MongoDB/API-key, Drizzle/DDD, minimal)
 
 ---
 
@@ -15,30 +16,32 @@
 
 ```
 boiler-plate/
-├── src/                        # CLI source (TypeScript)
-│   ├── bin/zen.ts              # Entry point, command registration (Commander.js)
+├── src/                          # CLI source (TypeScript)
+│   ├── bin/zen.ts                # Entry point — Commander.js command registration
 │   ├── generator/
-│   │   ├── engine.ts           # Template walker + Handlebars compiler
-│   │   └── post-generate.ts    # git init, npm install, husky setup
-│   ├── prompts/questions.ts    # @clack/prompts interactive questions
-│   └── types/config.types.ts   # ProjectConfig interface
-├── templates/                  # NestJS project templates (.hbs files)
+│   │   ├── engine.ts             # Template walker + Handlebars compiler + prefix system
+│   │   └── post-generate.ts      # git init → install → prisma generate → husky → commit
+│   ├── prompts/questions.ts      # @clack/prompts — 6 sections, summary screen
+│   └── types/config.types.ts     # ProjectConfig interface
+├── templates/                    # NestJS project templates (.hbs files)
 │   ├── src/
-│   │   ├── _ddd/               # DDD architecture templates
-│   │   └── _modular/           # Modular architecture templates
-│   ├── _docker/                # Dockerfile + docker-compose
-│   ├── _prisma/                # Prisma schema + service
-│   ├── _typeorm/               # TypeORM config + migrations
-│   ├── _drizzle/               # Drizzle config + schema
-│   ├── _cicd/                  # GitHub Actions workflow
-│   ├── .husky/                 # pre-commit + pre-push hooks
-│   ├── .nvmrc                  # Node.js version pin (20)
-│   ├── package.json.hbs        # Dependency manifest (conditional)
-│   ├── .env.example.hbs        # Environment variable template
-│   ├── tsconfig.json.hbs       # TypeScript config with path aliases
-│   ├── Makefile.hbs            # Common dev commands
-│   └── README.md.hbs           # Auto-generated project README
-├── dist/                       # Compiled output
+│   │   ├── _ddd/                 # DDD architecture templates
+│   │   └── _modular/             # Modular architecture templates
+│   ├── _docker/                  # Dockerfile + docker-compose
+│   ├── _prisma/                  # schema.prisma.hbs + seed.ts.hbs
+│   ├── _typeorm/                 # TypeORM config + migration
+│   ├── _drizzle/                 # Drizzle config + schema.ts.hbs
+│   ├── _cicd/                    # GitHub Actions workflow
+│   ├── .husky/                   # pre-commit + pre-push hooks
+│   ├── .nvmrc.hbs                # Node version pin (from user selection)
+│   ├── package.json.hbs          # Dependency manifest (all conditional)
+│   ├── .env.example.hbs          # Environment variable template
+│   ├── tsconfig.json.hbs         # TypeScript config with path aliases
+│   ├── Makefile.hbs              # Common dev commands
+│   └── README.md.hbs             # Auto-generated project README
+├── test-generate.mjs             # Direct generation script (bypasses prompts)
+├── test-combos.mjs               # Multi-combination build test runner
+├── dist/                         # Compiled output
 ├── package.json
 └── tsconfig.json
 ```
@@ -57,45 +60,21 @@ npm run format       # Prettier format
 
 ---
 
-## How the Generator Works
-
-### 1. Entry Point — `src/bin/zen.ts`
-Registers `launch server` command via Commander.js. Calls `questions.ts` for prompts, then `engine.ts` for generation, then `post-generate.ts` for post-setup.
-
-### 2. Prompt System — `src/prompts/questions.ts`
-Uses `@clack/prompts` for a terminal TUI. Prompts are conditional (e.g., queue only appears if Redis is chosen). Returns a `ProjectConfig` object.
-
-### 3. Template Engine — `src/generator/engine.ts`
-- Walks `templates/` recursively
-- Resolves Handlebars `.hbs` files using `ProjectConfig` context
-- **Prefix-based conditional inclusion:** files/dirs prefixed with `_featureName` are only copied when that feature is selected (see Prefix System below)
-- Transparent wrappers: `_docker/` → `./`, `_cicd/` → `.github/`
-- Binary files (.png, .woff, etc.) copied as-is
-- Path traversal protection + project name regex validation
-
-### 4. Post-Generation — `src/generator/post-generate.ts`
-Runs sequentially after file generation:
-1. `git init` + creates `main` branch
-2. `npm install` / `yarn install` / `pnpm install` with spinner
-3. Husky setup (`npx husky install`)
-4. Initial commit: `chore: initial scaffold via launch-cli`
-
----
-
 ## ProjectConfig Type — `src/types/config.types.ts`
-
-The central config object passed to all Handlebars templates:
 
 ```typescript
 interface ProjectConfig {
   projectName: string;
+  nodeVersion: string;             // major only, e.g. "22" — from live nodejs.org fetch
+
+  // Data layer
   database: 'postgres' | 'mongodb' | 'supabase';
   orm: 'typeorm' | 'prisma' | 'drizzle' | 'mongoose';
   architecture: 'modular' | 'ddd';
 
   // Auth
   auth: 'jwt' | 'jwt-refresh' | 'api-key' | 'none';
-  oauthProviders: ('google' | 'github')[];   // [] when not selected
+  oauthProviders: ('google' | 'github')[];  // [] when none selected
   rbac: boolean;
   twoFactor: boolean;
 
@@ -111,17 +90,15 @@ interface ProjectConfig {
   // Storage
   storage: 's3' | 'cloudinary' | 'none';
 
-  // Payments
+  // Payments & Notifications
   stripe: boolean;
-
-  // Notifications
-  fcm: boolean;    // Firebase Cloud Messaging
-  sms: boolean;    // Twilio SMS
+  fcm: boolean;
+  sms: boolean;
 
   // Multi-tenancy
   multiTenancy: 'row-level' | 'none';
 
-  // Infra / DevOps
+  // Dev tools
   docs: 'swagger' | 'swagger-scalar';
   testing: 'unit' | 'unit-e2e' | 'none';
   socket: boolean;
@@ -133,304 +110,310 @@ interface ProjectConfig {
 
 ---
 
+## How the Generator Works
+
+### 1. Entry Point — `src/bin/zen.ts`
+Registers `launch server` via Commander.js → calls `questions.ts` → `engine.ts` → `post-generate.ts`.
+
+### 2. Prompt System — `src/prompts/questions.ts`
+- Fetches live Node.js releases from `https://nodejs.org/dist/index.json` (6s timeout, offline fallback)
+- Splits questions into **6 visual sections** with chalk headers and `p.group`
+- Shows a **summary confirmation screen** before generating
+- `multiselect` for OAuth providers guards against cancel-symbol returns (`p.isCancel` check)
+
+### 3. Template Engine — `src/generator/engine.ts`
+- Walks `templates/` recursively
+- Resolves Handlebars `.hbs` via `ProjectConfig` context
+- **Prefix-based conditional inclusion** (see table below)
+- `includes` helper works as both inline `{{#if (includes arr val)}}` and block `{{#includes arr val}}...{{/includes}}`
+- Binary files copied as-is; YAML files have `${{ secrets.X }}` escaping
+- Path traversal guard on all output paths
+
+### 4. Post-Generation — `src/generator/post-generate.ts`
+All steps use `spawn`-based async (event loop stays free → ora spinner animates):
+1. `git init` + `git checkout -b main`
+2. Detect package manager version via `process.execPath` (resolves nvm/fnm paths)
+3. Patch `"packageManager"` field in `package.json` (Corepack requirement)
+4. `pnpm install` / `npm install` / `yarn install`
+5. `prisma generate` (only when `orm === 'prisma'`)
+6. Husky v9 setup (`husky` binary, no `install` subcommand)
+7. Initial commit (`--no-verify`)
+
+---
+
+## Prompt UI Structure (6 sections)
+
+```
+⚡ launch-cli  —  Production-ready NestJS backend generator
+
+1/6  Project Basics     — name and runtime
+  ◆  Project name
+  ◆  Node.js version    (fetched live from nodejs.org)
+
+2/6  Database          — storage engine and ORM
+  ◆  Database
+  ◆  ORM / Query builder
+  ◆  Architecture
+
+3/6  Auth & Security   — authentication and access control
+  ◆  Auth strategy
+  ◆  OAuth / Social login  (multiselect: Google, GitHub)
+  ◆  Add RBAC?
+  ◆  Add 2FA / TOTP?
+
+4/6  Infrastructure    — cache, queues, mail, storage
+  ◆  Cache layer
+  ◆  Queue / Background workers
+  ◆  Mailer
+  ◆  Email template engine
+  ◆  File storage
+
+5/6  Features          — payments, notifications, multi-tenancy
+  ◆  Stripe payments?
+  ◆  Firebase push notifications?
+  ◆  Twilio SMS?
+  ◆  Multi-tenancy
+
+6/6  Developer Tools   — docs, testing, docker, CI/CD
+  ◆  API documentation
+  ◆  Testing setup
+  ◆  WebSocket?
+  ◆  Docker?
+  ◆  CI/CD?
+  ◆  Package manager
+
+[ Project Summary ] — confirmation screen before generation
+```
+
+---
+
 ## Prefix System (Conditional File Inclusion)
 
-Files and directories prefixed with `_name` are included only when the corresponding feature is selected:
-
-| Prefix | Condition |
-|---|---|
-| `_ddd` | architecture === "ddd" |
-| `_modular` | architecture === "modular" |
-| `_auth` | auth !== "none" |
-| `_jwt` | auth is "jwt" or "jwt-refresh" |
-| `_refresh` | auth === "jwt-refresh" |
-| `_apikey` | auth === "api-key" |
-| `_oauth` | oauthProviders.length > 0 |
-| `_rbac` | rbac === true |
-| `_2fa` | twoFactor === true |
-| `_redis` | cache === "redis" OR queue === "bullmq" |
-| `_bullmq` | queue === "bullmq" |
-| `_mailer` | mailer !== "none" |
-| `_emailhbs` | emailTemplate === "handlebars" |
-| `_emailejs` | emailTemplate === "ejs" |
-| `_emailhtml` | emailTemplate === "html" |
-| `_typeorm` | orm === "typeorm" |
-| `_prisma` | orm === "prisma" |
-| `_drizzle` | orm === "drizzle" |
-| `_mongoose` | orm === "mongoose" |
-| `_s3` | storage === "s3" |
-| `_cloudinary` | storage === "cloudinary" |
-| `_stripe` | stripe === true |
-| `_fcm` | fcm === true |
-| `_twilio` | sms === true |
-| `_multitenancy` | multiTenancy !== "none" |
-| `_socket` | socket === true |
-| `_docker` | docker === true |
-| `_cicd` | cicd === true |
-| `_test` | testing !== "none" |
-| `_e2e` | testing === "unit-e2e" |
-| `_scalar` | docs === "swagger-scalar" |
-
-File prefix is stripped from the final filename (e.g., `_2fa.two-factor.service.ts` → `two-factor.service.ts`).
-
-### Directory → output path mapping
-
-| Template dir | Output path |
-|---|---|
-| `_docker/` | `./` |
-| `_cicd/` | `.github/` |
-| `_ddd/` | `src/` |
-| `_modular/` | `src/` |
-| `_typeorm/` | `src/database/` |
-| `_prisma/` | `prisma/` |
-| `_drizzle/` | `src/database/` |
-| `_redis/` | `infrastructure/cache/redis/` |
-| `_bullmq/` | `infrastructure/queue/bullmq/` |
-| `_mailer/` | `infrastructure/mail/` |
-| `_s3/` | `infrastructure/storage/` |
-| `_cloudinary/` | `infrastructure/storage/` |
-| `_stripe/` | `infrastructure/payments/stripe/` |
-| `_fcm/` | `infrastructure/notifications/fcm/` |
-| `_twilio/` | `infrastructure/notifications/twilio/` |
-| `_auth/` | `modules/auth/` |
-| `_socket/` | `modules/socket/` |
-| `_multitenancy/` | `modules/multitenancy/` |
-
----
-
-## Handlebars Custom Helpers
-
-| Helper | Usage | Description |
+| Prefix | Condition | Output name |
 |---|---|---|
-| `eq` | `{{#if (eq orm "prisma")}}` | Strict equality |
-| `ne` | `{{#if (ne auth "none")}}` | Not equal |
-| `or` | `{{#if (or a b)}}` | Logical OR |
-| `and` | `{{#if (and a b)}}` | Logical AND |
-| `isTrue` | `{{#if (isTrue socket)}}` | Boolean true check |
-| `includes` | `{{#if (includes oauthProviders "google")}}` | Array includes |
-| `camel` | `{{camel projectName}}` | camelCase |
-| `pascal` | `{{pascal projectName}}` | PascalCase |
-| `upper` | `{{upper projectName}}` | UPPER_CASE |
+| `_ddd` | architecture === "ddd" | transparent (contents → `src/`) |
+| `_modular` | architecture === "modular" | transparent (contents → `src/`) |
+| `_auth` | auth !== "none" | `auth/` |
+| `_jwt` | auth is "jwt" or "jwt-refresh" | stripped |
+| `_refresh` | auth === "jwt-refresh" | stripped |
+| `_apikey` | auth === "api-key" | stripped |
+| `_oauth` | oauthProviders.length > 0 | stripped |
+| `_rbac` | rbac === true | stripped |
+| `_2fa` | twoFactor === true | stripped |
+| `_redis` | cache === "redis" OR queue === "bullmq" | `cache/redis/` |
+| `_bullmq` | queue === "bullmq" | `queue/bullmq/` |
+| `_mailer` | mailer !== "none" | `mail/` |
+| `_emailhbs` | emailTemplate === "handlebars" | `templates/` |
+| `_emailejs` | emailTemplate === "ejs" | `templates/` |
+| `_emailhtml` | emailTemplate === "html" | `templates/` |
+| `_typeorm` | orm === "typeorm" | `src/database/` |
+| `_prisma` | orm === "prisma" | `prisma/` |
+| `_drizzle` | orm === "drizzle" | `src/database/` |
+| `_mongoose` | orm === "mongoose" | stripped |
+| `_s3` | storage === "s3" | `storage/` |
+| `_cloudinary` | storage === "cloudinary" | `storage/` |
+| `_stripe` | stripe === true | `payments/stripe/` |
+| `_fcm` | fcm === true | `notifications/fcm/` |
+| `_twilio` | sms === true | `notifications/twilio/` |
+| `_multitenancy` | multiTenancy !== "none" | `multitenancy/` |
+| `_socket` | socket === true | `socket/` |
+| `_docker` | docker === true | transparent (→ `./`) |
+| `_cicd` | cicd === true | transparent (→ `.github/`) |
+| `_test` | testing !== "none" | stripped |
+| `_e2e` | testing === "unit-e2e" | stripped |
+| `_scalar` | docs === "swagger-scalar" | stripped |
+
+File prefix strip list (in `resolveFileName`): `refresh`, `jwt`, `apikey`, `smtp`, `test`, `e2e`, `scalar`, `supabase`, `postgres`, `mongodb`, `prisma`, `typeorm`, `drizzle`, `mongoose`, `oauth`, `rbac`, `2fa`, `stripe`, `fcm`, `twilio`, `multitenancy`, `redis`
 
 ---
 
-## Generated Project: Full Feature Set
+## Handlebars Custom Helpers (`src/generator/engine.ts`)
+
+| Helper | Usage | Notes |
+|---|---|---|
+| `eq` | `{{#if (eq orm "prisma")}}` | Strict equality, works as block |
+| `ne` | `{{#if (ne auth "none")}}` | Not equal, works as block |
+| `or` | `{{#if (or a b)}}` | Logical OR, block only |
+| `and` | `{{#if (and a b)}}` | Logical AND, block only |
+| `isTrue` | `{{#if (isTrue socket)}}` | Boolean true check, works as block |
+| `includes` | `{{#includes oauthProviders "google"}}` | Array includes — works as **both** inline and block helper |
+| `camel` | `{{camel projectName}}` | camelCase conversion |
+| `pascal` | `{{pascal projectName}}` | PascalCase conversion |
+| `upper` | `{{upper projectName}}` | UPPER_CASE conversion |
+
+**Critical note on `includes`:** Must support both inline `{{#if (includes arr val)}}` and block `{{#includes arr val}}...{{/includes}}` modes. Using it as a block helper without this dual support renders `false` as a literal string.
+
+---
+
+## Generated Project Features
 
 | Category | Options |
 |---|---|
+| Node.js version | User-selected from live nodejs.org feed — sets `.nvmrc`, `engines`, Dockerfile |
 | Database | PostgreSQL, MongoDB, Supabase |
 | ORM/ODM | TypeORM, Prisma, Drizzle, Mongoose |
-| Architecture | Modular, DDD |
+| Architecture | Modular (feature-based), DDD (domain layers) |
 | Auth | JWT, JWT+Refresh, API Key, None |
-| OAuth | Google, GitHub (multiselect, requires JWT auth) |
-| RBAC | Yes/No — generates Role enum, @Roles() decorator, RolesGuard |
-| 2FA / TOTP | Yes/No — generates TwoFactorService, TOTP endpoints, QR code setup |
-| Cache | Redis (ioredis + Redis-backed throttling), In-Memory, None |
-| Queue | BullMQ (with job deduplication helpers), None |
-| Mailer | Nodemailer (SMTP), Resend, None |
-| Email Templates | Handlebars, EJS, Plain HTML |
-| File Storage | AWS S3, Cloudinary, None |
-| Payments | Stripe — checkout sessions, subscriptions, signed webhook handler |
-| Push Notifications | Firebase FCM — single, multicast, topic-based |
-| SMS | Twilio — plain SMS, OTP, Twilio Verify integration |
-| Multi-tenancy | Row-level isolation (x-tenant-id header + AsyncLocalStorage) |
-| API Docs | Swagger UI, Swagger + Scalar UI |
-| Real-time | Socket.io with auth guard |
-| Testing | Unit (Jest), Unit + E2E (supertest), None |
-| Docker | Multi-stage Dockerfile + docker-compose with Prisma migrate service |
-| CI/CD | GitHub Actions → EC2 deploy |
-| Package Manager | npm, yarn, pnpm |
-
----
-
-## Generated Project Architecture
-
-### Modular Architecture (`_modular`)
-Feature-based, best for smaller teams:
-
-```
-src/
-├── config/                  # App, DB, env validation configs
-├── common/                  # Shared utilities
-│   ├── decorators/          # @Public(), @CurrentUser(), @Roles(), @TenantId()
-│   ├── filters/             # HttpExceptionFilter
-│   ├── guards/              # JwtAuthGuard, RolesGuard
-│   ├── interceptors/        # ResponseInterceptor
-│   ├── middleware/          # RequestIdMiddleware, rawBodyMiddleware (Stripe)
-│   ├── helpers/             # ok() response helper
-│   └── pipes/               # PaginationDto
-├── modules/                 # Feature modules
-│   ├── auth/                # Auth + OAuth + 2FA
-│   ├── user/                # User management
-│   ├── health/              # Health checks
-│   ├── multitenancy/        # Tenant entity, service, middleware (if enabled)
-│   └── socket/              # WebSocket gateway (if enabled)
-├── infrastructure/          # Shared singleton services
-│   ├── cache/redis/         # Redis module + service
-│   ├── queue/bullmq/        # BullMQ module + processors + deduplication helpers
-│   ├── mail/                # Mailer module + service + templates
-│   ├── storage/             # S3 or Cloudinary module + service
-│   ├── payments/stripe/     # StripeService + webhook controller
-│   ├── notifications/fcm/   # FcmService (Firebase push)
-│   ├── notifications/twilio/# TwilioService (SMS + Verify)
-│   ├── database/            # ORM config (Prisma/TypeORM)
-│   └── scheduler/cron/      # Cron module
-└── integrations/            # Third-party API integrations
-```
+| OAuth | Google, GitHub (passport-google-oauth20 / passport-github2) |
+| RBAC | `Role` enum (admin/user/moderator), `@Roles()` decorator, global `RolesGuard` |
+| 2FA/TOTP | `otplib` + `qrcode` — setup/enable/disable endpoints with QR code |
+| Cache | Redis (`redisStore` API), In-memory, None |
+| Rate limiting | Redis-backed when Redis selected (`@nest-lab/throttler-storage-redis`) |
+| Queue | BullMQ with job deduplication helper (`enqueueUnique`) |
+| Mailer | Nodemailer (SMTP), Resend |
+| Email templates | Handlebars, EJS, Plain HTML |
+| File storage | AWS S3, Cloudinary |
+| Payments | Stripe — checkout, subscriptions, signature-verified webhooks |
+| Push notifications | Firebase FCM — single, multicast, topic, subscribe/unsubscribe |
+| SMS | Twilio — plain SMS, OTP, Twilio Verify managed flow |
+| Multi-tenancy | Row-level isolation — `x-tenant-id` header + `AsyncLocalStorage` |
+| API docs | Swagger UI, Swagger + Scalar UI |
+| WebSocket | Socket.io with JWT auth guard |
+| Testing | Unit (Jest), Unit+E2E (Jest+Supertest) |
+| Docker | Multi-stage alpine Dockerfile + docker-compose (with Prisma migrate service) |
+| CI/CD | GitHub Actions → EC2 (lint → test → build → SCP → SSH deploy) |
+| Git hooks | Husky v9 — pre-commit (lint-staged) + pre-push (no console.log, no commented code) |
 
 ---
 
 ## Generated Project: Key Patterns
 
 ### Standard API Response
-All endpoints return via `ResponseInterceptor`:
+Every endpoint returns via `ResponseInterceptor`:
 ```json
 { "status": 200, "message": "Success", "data": {} }
 ```
 
-### Error Response (HttpExceptionFilter)
-```json
-{ "status": 400, "message": "Validation failed", "data": null }
-```
+### Bootstrap Order (main.ts)
+1. `enableShutdownHooks()` — graceful SIGTERM drain
+2. `rawBody: true` — enabled when Stripe is selected (webhook signature verification)
+3. Helmet, compression, CORS
+4. `RequestIdMiddleware` (UUID v4 tracing)
+5. `ValidationPipe` (whitelist, forbid unknown, auto-transform)
+6. Global error filter + response interceptor
+7. `ThrottlerGuard` — Redis-backed when Redis selected, in-memory otherwise
 
-### Security Stack (bootstrap)
-1. `app.enableShutdownHooks()` — graceful SIGTERM drain
-2. Helmet (security headers)
-3. Compression (gzip)
-4. CORS (whitelist from `CORS_ORIGINS` env)
-5. RequestIdMiddleware (UUID v4 tracing)
-6. ValidationPipe (whitelist, forbid unknown, auto-transform)
-7. Global error filter + response interceptor
-8. ThrottlerGuard — Redis-backed when Redis selected, in-memory otherwise
+### RBAC Flow
+- `Role` enum in `common/decorators/roles.decorator.ts`
+- `RolesGuard` registered as `APP_GUARD` globally
+- JWT payload includes `role` field → strategy merges into user object
+- Usage: `@Roles(Role.ADMIN)` on any route — no `@UseGuards` needed
 
-### TypeScript Path Aliases (generated project)
-```json
-"@config/*"         → "src/config/*"
-"@modules/*"        → "src/modules/*"
-"@infrastructure/*" → "src/infrastructure/*"
-"@common/*"         → "src/common/*"   (modular)
-"@shared/*"         → "src/shared/*"   (ddd)
-"@interfaces/*"     → "src/interfaces/*" (ddd)
-```
+### 2FA Flow
+1. `GET /auth/2fa/setup` → returns secret + QR code data URL
+2. `POST /auth/2fa/enable` → verifies TOTP code, sets `twoFactorEnabled: true`
+3. `DELETE /auth/2fa/disable` → verifies TOTP code, disables
 
----
+### Stripe Webhook
+- `rawBody: true` in NestJS factory (enables raw body buffer)
+- Webhook controller calls `stripeService.constructWebhookEvent(req.rawBody, sig)`
+- Handles: `checkout.session.completed`, subscription updates/deletions, payment failures
 
-## New Feature: OAuth / Social Login
-
-- **Files:** `strategies/google.strategy.ts`, `strategies/github.strategy.ts`, `oauth.controller.ts`
-- **Routes:** `GET /api/v1/auth/oauth/google` → redirect, `GET /api/v1/auth/oauth/google/callback`
-- **Flow:** Passport OAuth20 → calls `authService.upsertUser()` → returns JWT tokens
-- **Env vars:** `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALLBACK_URL` (+ GitHub equivalents)
-- **Condition:** Only generated when auth is JWT or JWT+Refresh AND oauthProviders is non-empty
-
-## New Feature: RBAC
-
-- **Files:** `common/decorators/roles.decorator.ts`, `common/guards/roles.guard.ts`
-- **Usage:** `@Roles(Role.ADMIN)` on a controller/route, combined with `@UseGuards(RolesGuard)`
-- **Roles:** `admin`, `user`, `moderator` (extend the `Role` enum as needed)
-- **User entity:** Gets `role: 'admin' | 'user' | 'moderator'` field when RBAC is enabled
-- **Global guard:** Registered as `APP_GUARD` in AuthModule — no need to apply per-controller
-
-## New Feature: 2FA / TOTP
-
-- **Files:** `two-factor.service.ts`, `two-factor.controller.ts`
-- **Routes:**
-  - `GET /api/v1/auth/2fa/setup` — generates TOTP secret + QR code data URL
-  - `POST /api/v1/auth/2fa/enable` — verifies code and enables 2FA
-  - `DELETE /api/v1/auth/2fa/disable` — verifies code and disables 2FA
-- **Libraries:** `otplib` (TOTP), `qrcode` (QR PNG data URL)
-- **User entity:** Gets `twoFactorEnabled: boolean` + `twoFactorSecret: string | null` fields
-
-## New Feature: Stripe Payments
-
-- **Files:** `infrastructure/payments/stripe/`
-  - `stripe.service.ts` — checkout sessions, subscriptions, customer management, signature verification
-  - `stripe-webhook.controller.ts` — handles `checkout.session.completed`, subscription events, payment failures
-  - `common/middleware/raw-body.middleware.ts` — captures raw body for webhook signature verification
-- **Key methods:** `createCheckoutSession()`, `createSubscriptionSession()`, `createCustomer()`, `cancelSubscription()`, `constructWebhookEvent()`
-- **Env vars:** `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`
-- **Important:** Register `rawBodyMiddleware` on `/webhooks/stripe` in bootstrap for signature verification to work
-
-## New Feature: Firebase Cloud Messaging (FCM)
-
-- **Files:** `infrastructure/notifications/fcm/`
-  - `fcm.service.ts` — single device, multicast, topic-based push
-- **Key methods:** `sendToDevice()`, `sendMulticast()`, `sendToTopic()`, `subscribeToTopic()`, `unsubscribeFromTopic()`
-- **Env vars:** `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`
-- **Notes:** `FIREBASE_PRIVATE_KEY` must have `\n` escaped as `\\n` in .env file
-
-## New Feature: Twilio SMS
-
-- **Files:** `infrastructure/notifications/twilio/`
-  - `twilio.service.ts` — plain SMS, OTP sending, Twilio Verify managed flow
-- **Key methods:** `sendSms()`, `sendOtp()`, `startVerification()`, `checkVerification()`
-- **Env vars:** `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`, `TWILIO_VERIFY_SERVICE_SID`
-- **Twilio Verify vs manual OTP:** Use `startVerification`/`checkVerification` (Verify service) when you want Twilio to manage OTP storage + expiry. Use `sendOtp` when you manage the code yourself.
-
-## New Feature: Multi-tenancy (Row-level)
-
-- **Files:** `modules/multitenancy/`
-  - `tenant.middleware.ts` — reads `x-tenant-id` header, binds to `AsyncLocalStorage`
-  - `tenant.context.ts` — `getCurrentTenantId()` callable from any service
-  - `tenant.decorator.ts` — `@TenantId()` controller param decorator
-  - `tenant.service.ts` — stub service (replace with ORM repository)
-  - `tenant.controller.ts` — `POST /tenants`, `GET /tenants/:id`
-- **User entity:** Gets `tenantId: string` field
-- **Pattern:** Register `TenantMiddleware` in `AppModule.configure()` for all API routes. Each service calls `getCurrentTenantId()` to scope queries.
+### Multi-tenancy
+- `TenantMiddleware` reads `x-tenant-id` header → binds to `AsyncLocalStorage`
+- Any service calls `getCurrentTenantId()` to scope queries
+- `@TenantId()` param decorator for controllers
+- User entity has `tenantId` field in all ORM schemas
 
 ---
 
-## Bug Fixes Applied
+## ORM Schema Files (Conditional with Handlebars)
 
-| Fix | File(s) Changed |
+These are `.hbs` files so they can conditionally include fields:
+
+| File | Conditionals |
 |---|---|
-| Graceful shutdown (`enableShutdownHooks`) | `_modular/main.ts.hbs`, `_ddd/main.ts.hbs` |
-| `.nvmrc` (Node 20 pin) | `templates/.nvmrc` |
-| `engines` field in package.json | `templates/package.json.hbs` |
-| Redis-backed rate limiting | `app.module.ts.hbs`, `package.json.hbs` |
-| Refresh token blacklist entity + service | `modules/_auth/entities/token-blacklist.entity.ts`, `token-blacklist.service.ts` |
-| BullMQ job deduplication | `infrastructure/_bullmq/queue.helpers.ts`, updated processor |
-| Prisma migrate race condition in Docker | `_docker/docker-compose.yml.hbs` (added `migrate` service) |
+| `_prisma/schema.prisma.hbs` | `Role` enum + role field (rbac), twoFactor fields (twoFactor), tenantId (multiTenancy) |
+| `_prisma/seed.ts.hbs` | `import { Role }` + seed role + seed tenantId placeholder |
+| `_drizzle/schema.ts.hbs` | `pgEnum('role')` + role column (rbac), boolean fields (twoFactor), tenantId (multiTenancy) |
+| `_typeorm/migrations/*.ts.hbs` | role column (rbac), 2FA columns (twoFactor), tenantId column (multiTenancy) |
 
 ---
 
-## Adding a New Generator Feature
+## Known Working Combinations (Build-Verified)
 
-1. Add option to `ProjectConfig` in `src/types/config.types.ts`
-2. Add prompt in `src/prompts/questions.ts`
-3. Create template files prefixed with `_featureName` in `templates/`
-4. Add prefix → condition mapping in `shouldInclude()` in `src/generator/engine.ts`
+| Combo | Stack | Status |
+|---|---|---|
+| C1 | postgres + typeorm + modular + jwt | ✔ |
+| C2 | postgres + prisma + modular + jwt-refresh + rbac + 2fa + redis + bullmq + resend + s3 + stripe + multitenancy + e2e | ✔ |
+| C3 | mongodb + mongoose + modular + api-key + in-memory + nodemailer + cloudinary | ✔ |
+| C4 | postgres + drizzle + ddd + jwt + redis + bullmq + fcm + sms | ✔ |
+| C5 | postgres + prisma + modular + no-auth (minimal) | ✔ |
+
+---
+
+## Bug Fixes Log (Chronological)
+
+| Fix | File(s) |
+|---|---|
+| Graceful shutdown missing (`enableShutdownHooks`) | `main.ts.hbs` (modular + DDD) |
+| `.nvmrc` hardcoded to 20 | Converted to `.nvmrc.hbs` using `{{nodeVersion}}` |
+| `engines` field missing from `package.json` | `package.json.hbs` |
+| Redis rate limiting was in-memory | Added `@nest-lab/throttler-storage-redis` when Redis selected |
+| Token blacklist used TypeORM in all projects | Prefixed `_typeorm.token-blacklist.*` — only generated with TypeORM |
+| BullMQ `queue.add` generic type too strict | Changed to `Queue<any>` |
+| Prisma migrate race condition in Docker | Added `migrate` service to `docker-compose.yml.hbs` |
+| `npm install` spinner frozen (event loop blocked) | Switched from `execSync` to async `spawn`-based `run()` |
+| `npm install` failing in nvm environments | `resolvePackageManagerBin()` derives path from `process.execPath` |
+| Corepack pnpm error (missing `packageManager` field) | Detect version, patch `package.json` before install |
+| `includes` block helper renders `false` literal | Rewrote to support both inline and block modes |
+| `redis.health.ts` always generated | Renamed to `_redis.redis.health.ts` + added `redis` to prefix strip list |
+| `common/guards/index.ts` exports JwtAuthGuard when auth=none | Converted to `.hbs`, conditional export |
+| `JwtModule` imported for api-key auth | Wrapped in `{{#or (eq auth "jwt") (eq auth "jwt-refresh")}}` |
+| `JwtService` used in auth.service for api-key auth | `generateTokens` + its calls wrapped in JWT conditional |
+| `cache-manager-ioredis-yet` API changed | `createKeyv` → `redisStore` (modular + DDD templates) |
+| `body-parser` import in Stripe middleware | Removed; using NestJS `rawBody: true` instead |
+| Stripe `apiVersion` outdated | Updated to `'2025-02-24.acacia'` |
+| `dotenv` missing from TypeORM/Drizzle projects | Added `"dotenv": "^16.4.7"` to `package.json.hbs` |
+| `@types/multer` missing for Cloudinary | Added to devDeps when `storage === cloudinary` |
+| DDD auth controller import paths wrong (1 level short) | Fixed all 3 relative imports (`../../` → `../../../`) |
+| DDD `ValueObject<T extends Record<string, unknown>>` too strict | Changed to `ValueObject<T = any>` |
+| RBAC fields missing from all ORM schemas | Added conditional role column to Prisma/Drizzle/TypeORM schema templates |
+| Prisma seed `role: "admin"` type mismatch | Import `Role` from `@prisma/client`, use `Role.admin` |
+| Prisma seed missing `tenantId` when multiTenancy enabled | Added `tenantId: '00000000-...'` placeholder |
+| `User` interface missing 2FA/role fields | Added `twoFactorEnabled?`, `twoFactorSecret?`, `tenantId?`, `role` to interface |
+| OAuth `oauthProviders` null in summary | Guard `p.isCancel(val)` check on multiselect result |
+
+---
+
+## Adding a New Feature
+
+1. Add type to `ProjectConfig` in `src/types/config.types.ts`
+2. Add prompt in `src/prompts/questions.ts` (correct section, conditional if dependent)
+3. Create template files prefixed `_featureName` in `templates/`
+4. Add prefix → condition in `shouldInclude()` in `src/generator/engine.ts`
 5. Add directory → output path in `resolveFileName()` in `src/generator/engine.ts`
-6. Add conditional dependency blocks in `templates/package.json.hbs`
-7. Add env vars to `templates/.env.example.hbs`
-8. Wire module import in `templates/src/_modular/app.module.ts.hbs`
+6. Add prefix to the filename strip regex in `resolveFileName()`
+7. Add conditional deps to `templates/package.json.hbs`
+8. Add env vars to `templates/.env.example.hbs`
+9. Wire module import in `templates/src/_modular/app.module.ts.hbs`
+10. Run `node test-combos.mjs` to verify no regressions
 
 ---
 
-## Key Dependencies (CLI)
+## Testing Generated Projects
 
-| Package | Purpose |
-|---|---|
-| `commander` 12 | CLI argument parsing |
-| `@clack/prompts` 0.7 | Terminal TUI prompts |
-| `handlebars` 4.7 | Template rendering |
-| `fs-extra` 11 | File system utilities |
-| `chalk` 5.3 | Terminal colors |
-| `ora` 8 | Spinner UI |
+```bash
+# Direct generation (bypasses prompts) — edit config object inside
+node test-generate.mjs
+
+# Multi-combination build verifier — runs 5 preset stacks
+node test-combos.mjs
+```
 
 ---
 
 ## Important Notes
 
-- **No dead code in generated projects** — unused features are never written to disk
-- **YAML escaping** in CI/CD templates preserves `${{ secrets.X }}` GitHub Actions syntax
-- **Binary files** (.png, .jpg, .woff, etc.) are copied as-is, never processed as Handlebars
-- **Supabase** uses raw PostgreSQL connection string (not the Supabase JS client)
-- **In-memory cache** is single-instance only, not suitable for distributed deployments
-- **Socket.io** namespace is hardcoded to `"socket"` in templates
-- **Rate limiting** uses Redis store when Redis is selected, in-memory otherwise
-- **Prisma migrations** run in a separate `migrate` docker-compose service before the app starts
-- **Stripe webhooks** require `rawBodyMiddleware` on `/webhooks/stripe` — do not use global JSON body parser on that route
+- **No dead code** — unused features are never written to disk
+- **YAML escaping** — `${{ secrets.X }}` GitHub Actions syntax is preserved in CI/CD templates
+- **Binary files** — `.png`, `.jpg`, `.woff` etc. copied as-is, never processed as Handlebars
+- **Supabase** — uses raw PostgreSQL connection string, not the Supabase JS client
+- **In-memory cache** — single-instance only, not suitable for distributed deployments
+- **Redis rate limiting** — automatically switches to `ThrottlerStorageRedisService` when Redis is selected
+- **Prisma migrate** — runs in a separate docker-compose `migrate` service before the app starts
+- **Stripe webhooks** — require `rawBody: true` in `NestFactory.create()` (auto-set when stripe is selected)
 - **FCM `FIREBASE_PRIVATE_KEY`** — must escape newlines as `\\n` in .env files
-- **Multi-tenancy middleware** must be registered in `AppModule.configure()` for all API routes
-- **RBAC RolesGuard** is registered as `APP_GUARD` globally — use `@Roles()` to restrict, no `@UseGuards` needed per-route
+- **Husky v9** — initializes with `husky` (no `install` subcommand); `prepare` script is `"husky"` not `"husky install"`
+- **ORM schemas** — `schema.prisma`, `schema.ts` (Drizzle), and TypeORM migrations are `.hbs` files so they can use Handlebars conditionals for role/2FA/tenantId fields
+- **`includes` helper** — must be used as a block helper in templates, not inline, for array checks on config arrays like `oauthProviders`
